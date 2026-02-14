@@ -1,5 +1,5 @@
 {
   "title": "Guides & Concepts",
   "defaultOpen": true,
-  "pages": ["defining-entities", "queries"]
+  "pages": ["defining-entities", "queries", "mutations"]
 }
