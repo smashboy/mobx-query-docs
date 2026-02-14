@@ -1,0 +1,138 @@
+---
+title: Overview
+description: Why mobx-query exists, what problems it solves, and how it works under the hood.
+---
+
+## Motivation
+
+Modern frontend applications need to manage **server state** — data that lives on a remote server (or local database) and must be fetched, cached, synchronized, and eventually mutated. Libraries like [TanStack Query](https://tanstack.com/query) solve this brilliantly with declarative data-fetching primitives.
+
+At the same time, many complex applications rely on [MobX](https://mobx.js.org/) for **client state** — fine-grained observable models that react to changes automatically and power performant UI updates.
+
+The challenge arises when you try to combine both:
+
+- **TanStack Query** gives you raw JSON data, but you want rich MobX observable objects.
+- **Multiple queries** can return the same logical entity (e.g. a "Folder" appears in a list query and a detail query). Without normalization, updates in one place are invisible to the other.
+- **Optimistic mutations** require careful orchestration — rolling back observable state, invalidating the right caches, and keeping UI responsive.
+- **Dirty tracking** (knowing which fields have been locally modified) is a common requirement that neither tool handles out of the box.
+
+**mobx-query** exists to solve exactly this gap — it bridges TanStack Query's server-state management with MobX's reactive client-state model, giving you a single, coherent architecture.
+
+## What It Solves
+
+### 1. Entity Normalization
+
+Instead of storing raw query results, mobx-query maintains a global `EntityManager` per entity type. Every query result passes through this manager, which:
+
+- Creates new entity instances or **reuses existing ones** by identity (ID).
+- Merges fresh server data into already-mounted entities.
+- Tracks which TanStack Query cache entries ("query hashes") reference each entity, enabling precise garbage collection.
+
+This means if `Folder #42` appears in both a sidebar query and a detail query, there is **one MobX-observable `Folder` instance** shared across both — updates are automatically visible everywhere.
+
+### 2. Declarative Queries Returning Entities
+
+With `QueryMany` and `QueryOne`, you define queries that look like standard TanStack Query options but **return hydrated MobX entity instances** instead of raw data:
+
+```ts
+const foldersQuery = new QueryMany({
+  entity: Folder,
+  queryKey: () => ["folders"],
+  queryFn: async (_, ctx) => {
+    return ctx.db.query.folder.findMany();
+  },
+});
+
+// In a React component:
+const folders = foldersQuery.useSuspenseQuery(undefined);
+// `folders` is Folder[] — each item is a fully observable MobX class instance
+```
+
+### 3. Built-in Optimistic Mutations
+
+mobx-query provides mutation classes designed for common patterns:
+
+- **`CreateMutation`** — instantly adds a new entity to the local collection while the server request is in flight. Rolls back on error.
+- **`UpdateMutation`** — tracks dirty state, skips redundant mutations, and provides automatic rollback with snapshot-based change tracking.
+- **`DeleteMutation`** — optimistically hides the entity from all related queries with configurable invalidation strategies.
+
+All mutations integrate with TanStack Query's mutation cache, giving you features like retry, deduplication, and devtools visibility for free.
+
+### 4. Dirty Tracking & Reset
+
+Every `Entity` automatically tracks field-level changes after hydration. When an observable property is modified locally:
+
+- `entity.isDirty` becomes `true`.
+- A deep-cloned snapshot of the original value is stored internally.
+- Calling `entity.reset()` restores all fields to their original server values.
+
+This makes building edit forms trivially easy — your entity _is_ the form model.
+
+## How It Works Under the Hood
+
+### Core Architecture
+
+mobx-query is built around three primary concepts:
+
+```
+┌─────────────────────────────────────────────────┐
+│                   MQClient                      │
+│  ┌──────────────┐  ┌────────────────────────┐   │
+│  │   Context     │  │      RootStore         │   │
+│  │  (QueryClient │  │  ┌────────────────┐    │   │
+│  │   + custom)   │  │  │  FoldersStore   │   │   │
+│  └──────────────┘  │  │  DocumentsStore  │   │   │
+│                     │  │  ...             │   │   │
+│  ┌──────────────┐  │  └────────────────┘    │   │
+│  │ EntityManager │  └────────────────────────┘   │
+│  │  (per Entity) │                               │
+│  └──────────────┘                                │
+└─────────────────────────────────────────────────┘
+```
+
+1. **`MQClient`** — The root container. You pass it your entity classes, a TanStack `QueryClient`, custom context, and a root store factory. It initializes one `EntityManager` per entity type and stores them in a global singleton.
+
+2. **`EntityManager`** — Manages a normalized `Map<EntityId, Entity>` collection for a single entity type. Handles entity creation, hydration, deduplication, and lifecycle (garbage collection when all related query hashes are removed).
+
+3. **`Entity`** — An abstract class you extend. Each entity has:
+   - An `id` field (required for identity).
+   - A `hydrate(data)` method you implement to map raw data → observable properties.
+   - Automatic change tracking via MobX `observe()`.
+   - A `queryHashes` set linking it to TanStack Query cache entries.
+
+### Query Flow
+
+When you call `query.useSuspenseQuery(args)`:
+
+1. A **query key** is constructed from the entity prefix + your custom key.
+2. The **query function** runs, fetching raw data from your backend/database.
+3. The raw data array is passed to `EntityManager.setEntities()`, which:
+   - Iterates each record.
+   - If an entity with that ID already exists → calls `hydrate()` on the existing instance (preserving referential identity).
+   - If it's new → creates a new entity instance, calls `_init()` + `hydrate()`, and adds it to the collection.
+   - Returns an array of entity **IDs**.
+4. TanStack Query stores the **ID array** (not the raw data) in its cache.
+5. On subsequent renders, the query returns the IDs, which are resolved to entity instances from the `EntityManager` collection via `getEntities()`.
+
+This architecture means TanStack Query handles caching and refetching, while MobX handles reactivity and UI updates — each doing what it does best.
+
+### Mutation Flow
+
+When a mutation (e.g. `CreateMutation`) fires:
+
+1. A new entity instance is created and hydrated from the input.
+2. It's immediately added to the `EntityManager` collection (optimistic insert).
+3. An `OptimisticMutationStrategy` is created to handle success/error/rollback.
+4. The actual mutation function runs asynchronously.
+5. **On success:** the entity is confirmed, related queries are invalidated based on the configured strategy (`'all-queries'` or `'related-queries'`).
+6. **On error:** the strategy rolls back — for creates, the entity is removed from the collection; for updates, `entity.reset()` restores original values.
+
+### MQClientAccessor
+
+All queries and mutations extend `MQClientAccessor`, which provides:
+
+- Access to the global `QueryClient`.
+- Access to the registered context.
+- Lookup for `EntityManager` instances by entity constructor.
+
+This eliminates dependency injection boilerplate — you simply instantiate query/mutation classes and they auto-connect to the global state.

@@ -1,0 +1,200 @@
+---
+title: Quickstart
+description: Build your first mobx-query setup in 5 minutes.
+---
+
+This guide walks you through a complete working example — from defining an entity to rendering reactive data in a React component.
+
+## 1. Define an Entity
+
+An **Entity** is a MobX-observable class that represents a single record from your server or database. Extend the `Entity` base class and implement the required `hydrate()` method:
+
+```ts title="todo.entity.ts"
+import { Entity } from "mobx-query/entity/Entity";
+import { observable, action } from "mobx";
+
+interface TodoData {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export class Todo extends Entity<string, TodoData> {
+  id: string = crypto.randomUUID();
+
+  @observable accessor title: string = "";
+  @observable accessor completed: boolean = false;
+
+  hydrate(data: TodoData) {
+    this.id = data.id;
+    this.title = data.title;
+    this.completed = data.completed;
+  }
+
+  @action toggleCompleted() {
+    this.completed = !this.completed;
+  }
+}
+```
+
+<Callout type="info">
+  The `hydrate()` method is called whenever fresh data arrives from a query. It
+  maps raw data fields onto your observable properties. The `Entity` base class
+  handles identity, dirty tracking, and query hash management automatically.
+</Callout>
+
+## 2. Create a Store
+
+A **Store** groups related queries and mutations. Define your queries using `QueryMany` (for lists) or `QueryOne` (for single records):
+
+```ts title="todos.store.ts"
+import { QueryMany } from "mobx-query/queries/QueryMany";
+import { CreateMutation } from "mobx-query/mutations/CreateMutation";
+import { Todo } from "./todo.entity";
+
+interface CreateTodoInput {
+  title: string;
+}
+
+export class TodosStore {
+  readonly todosQuery = new QueryMany({
+    entity: Todo,
+    queryKey: () => ["todos"],
+    queryFn: async () => {
+      const res = await fetch("/api/todos");
+      return res.json();
+    },
+  });
+
+  readonly createTodo = new CreateMutation<CreateTodoInput, typeof Todo>({
+    entity: Todo,
+    mutationFn: async (input, entity, ctx) => {
+      await fetch("/api/todos", {
+        method: "POST",
+        body: JSON.stringify({ id: entity.id, ...input }),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    invalidationStrategy: "all-queries",
+  });
+}
+```
+
+## 3. Initialize the Client
+
+Create an `MQClient` instance — this is the root of your mobx-query setup. It registers your entity classes, creates the root store, and connects everything to TanStack Query:
+
+```ts title="mqclient.ts"
+import { QueryClient } from "@tanstack/react-query";
+import { MQClient } from "mobx-query/MQClient";
+import { createReactContext } from "mobx-query/react/createReactContext";
+import { Todo } from "./todo.entity";
+import { TodosStore } from "./todos.store";
+
+// 1. Define your root store shape
+class RootStore {
+  todos = new TodosStore();
+}
+
+// 2. Initialize the client
+export function initMQClient(queryClient: QueryClient) {
+  return new MQClient<RootStore>({
+    context: { queryClient },
+    entities: [Todo],
+    rootStore: () => new RootStore(),
+  });
+}
+
+// 3. Create React context helpers
+export const { Provider: MQProvider, useContext: useMQ } =
+  createReactContext<MQClient<RootStore>>();
+```
+
+<Callout type="warn">
+  Every entity class your app uses **must** be registered in the `entities`
+  array. This is how mobx-query creates the internal `EntityManager` instances
+  that handle normalization.
+</Callout>
+
+## 4. Set Up the Provider
+
+Wrap your application with both TanStack Query's `QueryClientProvider` and the mobx-query `MQProvider`:
+
+```tsx title="App.tsx"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { initMQClient, MQProvider } from "./mqclient";
+
+const queryClient = new QueryClient();
+const mqClient = initMQClient(queryClient);
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MQProvider client={mqClient}>
+        <TodoApp />
+      </MQProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+## 5. Build a Reactive Component
+
+Now you can use your store's queries and mutations in React components. Wrap components with `observer` from `mobx-react-lite` to make them react to MobX observable changes:
+
+```tsx title="TodoApp.tsx"
+import { observer } from "mobx-react-lite";
+import { Suspense } from "react";
+import { useMQ } from "./mqclient";
+
+const TodoList = observer(() => {
+  const { rootStore } = useMQ();
+  const todos = rootStore.todos.todosQuery.useSuspenseQuery(undefined);
+
+  return (
+    <ul>
+      {todos.map((todo) => (
+        <TodoItem key={todo.id} todo={todo} />
+      ))}
+    </ul>
+  );
+});
+
+const TodoItem = observer(({ todo }: { todo: Todo }) => {
+  return (
+    <li
+      style={{ textDecoration: todo.completed ? "line-through" : "none" }}
+      onClick={() => todo.toggleCompleted()}
+    >
+      {todo.title}
+    </li>
+  );
+});
+
+export function TodoApp() {
+  return (
+    <Suspense fallback={<p>Loading todos...</p>}>
+      <TodoList />
+    </Suspense>
+  );
+}
+```
+
+<Callout type="success">
+  **That's it!** You now have a fully reactive setup where: -
+  `todosQuery.useSuspenseQuery()` fetches data and returns **hydrated MobX
+  entity instances**. - Clicking a todo calls `toggleCompleted()` — a MobX
+  action — and the UI re-renders instantly via `observer()`. - If the same
+  `Todo` entity appears in other queries, it's the **same object instance**, so
+  changes are visible everywhere.
+</Callout>
+
+## What's Next?
+
+Now that you have a working setup, explore the rest of the documentation to learn about:
+
+- **UpdateMutation & DeleteMutation** — optimistic updates with automatic rollback
+- **QueryOne** — fetching single entities by ID
+- **Dirty Tracking** — detecting local changes and resetting entities
+- **Custom Context** — registering app-wide context (database clients, auth tokens)
+- **Filters** — declarative filtering and sorting for entity queries

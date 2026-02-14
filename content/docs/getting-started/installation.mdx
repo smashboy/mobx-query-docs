@@ -1,0 +1,74 @@
+---
+title: Installation
+description: Install mobx-query and its required peer dependencies.
+---
+
+## Install mobx-query
+
+```npm
+npm install mobx-query
+```
+
+## Install Peer Dependencies
+
+mobx-query requires the following peer dependencies to be installed in your project:
+
+| Package                 | Purpose                                                                |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `@tanstack/react-query` | Server-state caching, refetching, and mutation management              |
+| `mobx`                  | Observable state and reactive computed properties                      |
+| `mobx-react-lite`       | React bindings for MobX — the `observer()` HOC for reactive components |
+
+```npm
+npm install @tanstack/react-query mobx mobx-react-lite
+```
+
+<Callout>
+  If you already have these packages in your project, you can skip the peer
+  dependency installation step. mobx-query is compatible with MobX 6+,
+  mobx-react-lite 3+, and TanStack Query v5.
+</Callout>
+
+## TypeScript
+
+mobx-query is written in TypeScript and ships with full type definitions out of the box. No additional `@types/*` packages are required.
+
+### Decorator Configuration
+
+mobx-query entities use the [TC39 decorator proposal](https://github.com/tc39/proposal-decorators) (stage 3) with the `accessor` keyword. Make sure your `tsconfig.json` is configured to support them:
+
+```json title="tsconfig.json"
+{
+  "compilerOptions": {
+    "experimentalDecorators": false,
+    "useDefineForClassFields": true
+  }
+}
+```
+
+<Callout type="warn">
+  Do **not** enable `experimentalDecorators`. mobx-query uses the modern TC39
+  decorators, which are incompatible with the legacy TypeScript decorator
+  implementation.
+</Callout>
+
+## Verify Installation
+
+Create a quick smoke test to verify everything is wired up correctly:
+
+```ts title="verify.ts"
+import { QueryClient } from '@tanstack/react-query'
+import { MQClient } from 'mobx-query/MQClient'
+
+const queryClient = new QueryClient()
+
+const client = new MQClient({
+  context: { queryClient },
+  entities: [],
+  rootStore: () => ({}),
+})
+
+console.log('✅ mobx-query is installed correctly!')
+```
+
+Run this file and if you see the success message, you're good to go!
