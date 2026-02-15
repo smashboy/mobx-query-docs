@@ -361,14 +361,14 @@
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--landing-text);
-  background: transparent;
+  background: var(--landing-surface);
   border: 1px solid var(--landing-border);
   text-decoration: none;
   transition: all 0.2s ease;
 }
 
 .btn-ghost:hover {
-  background: var(--landing-surface);
+  background: var(--landing-border);
   border-color: color-mix(
     in srgb,
     var(--landing-primary) 30%,
@@ -389,8 +389,8 @@
 
 .hero-diagram {
   position: relative;
-  width: 360px;
-  height: 380px;
+  width: 440px;
+  height: 460px;
 }
 
 .diagram-card {
@@ -412,7 +412,6 @@
 .diagram-card:hover {
   border-color: var(--landing-primary);
   box-shadow: 0 8px 40px -8px var(--landing-primary-glow);
-  translate: 0 -4px;
 }
 
 .diagram-card-icon {
@@ -443,48 +442,43 @@
 .diagram-card-mqclient {
   top: 0;
   left: 50%;
-  translate: -50% 0;
-  animation: card-float 5s ease-in-out infinite;
+  transform: translateX(-50%);
+  animation: card-float-center 5s ease-in-out infinite;
 }
 .diagram-card-em {
-  top: 52%;
-  left: 5%;
-  animation: card-float 6s ease-in-out infinite 1s;
+  top: 45%;
+  left: 0;
+  animation: card-float-side 6s ease-in-out infinite 1s;
 }
 .diagram-card-store {
-  top: 52%;
-  right: 5%;
-  animation: card-float 6s ease-in-out infinite 2s;
+  top: 45%;
+  right: 0;
+  animation: card-float-side 6s ease-in-out infinite 2s;
 }
 .diagram-card-entity {
   bottom: 0;
   left: 50%;
-  translate: -50% 0;
-  animation: card-float 5s ease-in-out infinite 1.5s;
+  transform: translateX(-50%);
+  animation: card-float-center 5s ease-in-out infinite 1.5s;
 }
 
-@keyframes card-float {
+@keyframes card-float-center {
   0%,
   100% {
-    translate: -50% 0px;
+    transform: translateX(-50%) translateY(0);
   }
   50% {
-    translate: -50% -8px;
+    transform: translateX(-50%) translateY(-8px);
   }
-}
-
-.diagram-card-em,
-.diagram-card-store {
-  animation-name: card-float-side;
 }
 
 @keyframes card-float-side {
   0%,
   100% {
-    translate: 0 0px;
+    transform: translateY(0);
   }
   50% {
-    translate: 0 -8px;
+    transform: translateY(-8px);
   }
 }
 
@@ -498,26 +492,26 @@
 
 .diagram-connector-1 {
   width: 2px;
-  height: 60px;
-  top: 75px;
-  left: calc(50% - 40px);
-  rotate: 20deg;
+  height: 80px;
+  top: 90px;
+  left: calc(50% - 50px);
+  rotate: 25deg;
 }
 
 .diagram-connector-2 {
   width: 2px;
-  height: 60px;
-  top: 75px;
-  right: calc(50% - 40px);
-  rotate: -20deg;
+  height: 80px;
+  top: 90px;
+  right: calc(50% - 50px);
+  rotate: -25deg;
 }
 
 .diagram-connector-3 {
   width: 100px;
   height: 2px;
-  top: 72%;
+  top: 75%;
   left: 50%;
-  translate: -50% 0;
+  transform: translateX(-50%);
   display: none;
 }
 

@@ -611,7 +611,7 @@ export default function HomePage() {
               mobx-query handle normalization, caching, and mutations — so you
               can focus on building features.
             </p>
-            <div className="hero-actions">
+            <div className="hero-actions align-center justify-center w-full">
               <Link
                 href="/docs/getting-started/quickstart"
                 className="btn-primary"
