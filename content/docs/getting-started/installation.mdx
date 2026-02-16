@@ -57,18 +57,18 @@ mobx-query entities use the [TC39 decorator proposal](https://github.com/tc39/pr
 Create a quick smoke test to verify everything is wired up correctly:
 
 ```ts title="verify.ts"
-import { QueryClient } from '@tanstack/react-query'
-import { MQClient } from 'mobx-query/MQClient'
+import { QueryClient } from "@tanstack/react-query";
+import { MQClient } from "mobx-query/MQClient";
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient();
 
 const client = new MQClient({
   context: { queryClient },
   entities: [],
   rootStore: () => ({}),
-})
+});
 
-console.log('✅ mobx-query is installed correctly!')
+console.log("✅ mobx-query is installed correctly!");
 ```
 
 Run this file and if you see the success message, you're good to go!

@@ -1,0 +1,388 @@
+---
+title: Advanced
+description: Register custom typed context, build reusable query/mutation factories, and more.
+---
+
+## Custom Typed Context
+
+By default, the only context available inside `queryFn` and `mutationFn` is the TanStack `QueryClient`. In real applications, you'll want to pass additional services — a database client, an API wrapper, auth tokens, etc. — so they're available in every query and mutation without importing globals.
+
+mobx-query supports this via **global namespace augmentation**. You define your custom context type _once_, and it becomes the inferred type for the `context` parameter across every query and mutation in your app.
+
+### Step 1: Define Your Custom Context
+
+Create a registration file that extends the base `MQClientContext` and registers it via the `MobXQuery` global namespace:
+
+```ts title="mq-register.ts"
+import type { MQClientContext as MQClientContextBase } from "mobx-query/types";
+
+// Your app's custom services
+interface ApiClient {
+  get<T>(url: string): Promise<T>;
+  post<T>(url: string, body: unknown): Promise<T>;
+  patch<T>(url: string, body: unknown): Promise<T>;
+  delete(url: string): Promise<void>;
+}
+
+// Extend the base context with your custom properties
+export interface MQClientContext extends MQClientContextBase {
+  api: ApiClient;
+}
+
+// Register it globally — this makes TypeScript aware of your context type
+// across all mobx-query queries and mutations
+declare global {
+  namespace MobXQuery {
+    interface RegisteredContext {
+      context: MQClientContext;
+    }
+  }
+}
+```
+
+<Callout type="warn">
+  This file must be imported **early** in your application (e.g. at the top of
+  your entry point). The global declaration needs to be visible to the
+  TypeScript compiler when it processes your query and mutation files.
+</Callout>
+
+### Step 2: Pass Context When Initializing MQClient
+
+When creating your `MQClient`, provide the custom context object. TypeScript will enforce that it matches your registered type:
+
+```ts title="mqclient.ts"
+import "./mq-register"; // ensure the registration is loaded
+import { MQClient } from "mobx-query/MQClient";
+import { QueryClient } from "@tanstack/react-query";
+
+const queryClient = new QueryClient();
+
+// Create your API client instance
+const api = {
+  async get<T>(url: string): Promise<T> {
+    const res = await fetch(url);
+    return res.json();
+  },
+  async post<T>(url: string, body: unknown): Promise<T> {
+    const res = await fetch(url, {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    });
+    return res.json();
+  },
+  // ... patch, delete
+};
+
+export function initMQClient() {
+  return new MQClient<RootStore>({
+    context: {
+      queryClient,
+      api, // ✅ TypeScript enforces this matches your registered context
+    },
+    entities: [Folder, Document],
+    rootStore: () => new RootStore(),
+  });
+}
+```
+
+### Step 3: Use Context in Queries and Mutations
+
+The context is now **automatically typed** in every `queryFn` and `mutationFn`. No casts, no generics — just destructure and use:
+
+```ts title="folders.store.ts"
+export class FoldersStore {
+  readonly foldersQuery = new QueryMany({
+    entity: Folder,
+    queryKey: () => ["folders"],
+    queryFn: async (_, ctx) => {
+      // ctx.api is fully typed as your ApiClient
+      return ctx.api.get<FolderData[]>("/api/folders");
+    },
+  });
+
+  readonly createFolder = new CreateMutation<CreateFolderInput, typeof Folder>({
+    entity: Folder,
+    mutationFn: async (input, entity, ctx) => {
+      // same typed context available in mutations
+      await ctx.api.post("/api/folders", { id: entity.id, ...input });
+    },
+  });
+}
+```
+
+### How It Works Under the Hood
+
+The magic is in mobx-query's `types.ts`:
+
+```ts
+// Base context — always includes queryClient
+export interface MQClientContext {
+  queryClient: QueryClient;
+}
+
+// Global namespace that users can augment
+declare global {
+  namespace MobXQuery {
+    interface RegisteredContext {}
+  }
+}
+
+// Conditional type that resolves to the user's registered context,
+// or falls back to the base MQClientContext if no registration exists
+export type MQClientContextRegistered = MobXQuery.RegisteredContext extends {
+  context: infer TContext extends MQClientContext;
+}
+  ? TContext
+  : MQClientContext;
+```
+
+All query and mutation function signatures use `MQClientContextRegistered` as the context type. When you augment `MobXQuery.RegisteredContext`, the conditional type resolves to your custom interface — giving you full type safety with zero boilerplate per query.
+
+<Callout type="info">
+  Your custom context **must** extend `MQClientContext` (which requires
+  `queryClient`). You can add any number of additional properties — database
+  clients, API wrappers, feature flags, auth services, etc.
+</Callout>
+
+## Reusable Queries and Mutations
+
+As your application grows, you'll notice patterns repeating across entities. Every entity needs an update mutation, a delete mutation, perhaps a "by ID" query. Instead of writing the same boilerplate for each entity, you can create **reusable factories** that generate queries and mutations from minimal configuration.
+
+### Reusable Query Factories
+
+Create a factory function that encapsulates common query patterns:
+
+```ts title="query-factories.ts"
+import { QueryMany } from "mobx-query/queries/QueryMany";
+import { QueryOne } from "mobx-query/queries/QueryOne";
+import { EntityConstructorAny } from "mobx-query/entity/Entity";
+
+/**
+ * Creates a standard "list all" query for an entity.
+ */
+export function createListQuery<TEntity extends EntityConstructorAny>(
+  entity: TEntity,
+  endpoint: string,
+) {
+  return new QueryMany({
+    entity,
+    queryKey: () => [endpoint],
+    queryFn: async () => {
+      const res = await fetch(`/api/${endpoint}`);
+      return res.json();
+    },
+  });
+}
+
+/**
+ * Creates a standard "get by ID" query for an entity.
+ */
+export function createDetailQuery<TEntity extends EntityConstructorAny>(
+  entity: TEntity,
+  endpoint: string,
+) {
+  return new QueryOne({
+    entity,
+    queryKey: () => [`${endpoint}ById`],
+    queryFn: async (id: string) => {
+      const res = await fetch(`/api/${endpoint}/${id}`);
+      return res.json();
+    },
+  });
+}
+```
+
+Use them in your stores:
+
+```ts title="folders.store.ts"
+import { createListQuery, createDetailQuery } from "./query-factories";
+import { Folder } from "./folder.entity";
+
+export class FoldersStore {
+  readonly foldersQuery = createListQuery(Folder, "folders");
+  readonly folderByIdQuery = createDetailQuery(Folder, "folders");
+}
+```
+
+### Reusable Mutation Factories
+
+The same pattern works for mutations. Create factories that accept the entity constructor, instance, and endpoint:
+
+```ts title="mutation-factories.ts"
+import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
+import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+import { EntityConstructorAny, EntityAny } from "mobx-query/entity/Entity";
+import {
+  OptimisticMutationInvalidationStrategy,
+  OptimisticMutationErrorStrategy,
+} from "mobx-query/mutations/types";
+
+interface EntityMutationConfig<TEntity extends EntityConstructorAny> {
+  entity: TEntity;
+  instance: InstanceType<TEntity>;
+  endpoint: string;
+  /** Fields to include in the PATCH body (reads from the entity instance) */
+  fields: (keyof InstanceType<TEntity>)[];
+  invalidationStrategy?: OptimisticMutationInvalidationStrategy;
+}
+
+/**
+ * Creates a standard PATCH update mutation for an entity.
+ */
+export function createUpdateMutation<TEntity extends EntityConstructorAny>(
+  config: EntityMutationConfig<TEntity>,
+) {
+  const { entity, instance, endpoint, fields, invalidationStrategy } = config;
+
+  return new UpdateMutation({
+    entity,
+    instance,
+    mutationFn: async () => {
+      const body: Record<string, unknown> = {};
+      for (const field of fields) {
+        body[field as string] = (instance as Record<string, unknown>)[
+          field as string
+        ];
+      }
+      await fetch(`/api/${endpoint}/${instance.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    invalidationStrategy,
+  });
+}
+
+/**
+ * Creates a standard DELETE mutation for an entity.
+ */
+export function createDeleteMutation<TEntity extends EntityConstructorAny>(
+  entity: TEntity,
+  instance: InstanceType<TEntity>,
+  endpoint: string,
+) {
+  return new DeleteMutation({
+    entity,
+    instance,
+    mutationFn: async () => {
+      await fetch(`/api/${endpoint}/${instance.id}`, { method: "DELETE" });
+    },
+  });
+}
+```
+
+Use the factories on your entity:
+
+```ts title="folder.entity.ts"
+import { Entity } from "mobx-query/entity/Entity";
+import {
+  createUpdateMutation,
+  createDeleteMutation,
+} from "./mutation-factories";
+
+export class Folder extends Entity<string, FolderData> {
+  id: string = crypto.randomUUID();
+
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
+
+  readonly updateMutation = createUpdateMutation({
+    entity: Folder,
+    instance: this,
+    endpoint: "folders",
+    fields: ["name", "description", "isPinned"],
+  });
+
+  readonly deleteMutation = createDeleteMutation(Folder, this, "folders");
+
+  hydrate(data: FolderData) {
+    // ...
+  }
+}
+```
+
+### Reusable Entity Base Classes
+
+For the highest level of reuse, you can create **abstract base entity classes** that bundle common mutations and actions:
+
+```ts title="CrudEntity.ts"
+import { Entity } from "mobx-query/entity/Entity";
+import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
+import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+
+/**
+ * Base entity with built-in update and delete mutations.
+ * Subclasses must implement `getEndpoint()` and `getUpdateBody()`.
+ */
+export abstract class CrudEntity<
+  TId extends string | number,
+  TData,
+> extends Entity<TId, TData> {
+  /** The REST API endpoint for this entity type (e.g. 'folders') */
+  protected abstract getEndpoint(): string;
+
+  /** Returns the JSON body for PATCH requests */
+  protected abstract getUpdateBody(): Record<string, unknown>;
+
+  readonly updateMutation = new UpdateMutation({
+    entity: this.constructor as any,
+    instance: this,
+    mutationFn: async () => {
+      await fetch(`/api/${this.getEndpoint()}/${this.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(this.getUpdateBody()),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  readonly deleteMutation = new DeleteMutation({
+    entity: this.constructor as any,
+    instance: this,
+    mutationFn: async () => {
+      await fetch(`/api/${this.getEndpoint()}/${this.id}`, {
+        method: "DELETE",
+      });
+    },
+  });
+}
+```
+
+Then your entities become concise:
+
+```ts title="folder.entity.ts"
+export class Folder extends CrudEntity<string, FolderData> {
+  id: string = crypto.randomUUID();
+
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
+
+  protected getEndpoint() {
+    return "folders";
+  }
+
+  protected getUpdateBody() {
+    return {
+      name: this.name,
+      description: this.description,
+      isPinned: this.isPinned,
+    };
+  }
+
+  hydrate(data: FolderData) {
+    // ...
+  }
+}
+```
+
+<Callout type="idea">
+  Choose the reuse strategy that fits your app's complexity. **Factory
+  functions** are the most flexible and easiest to type correctly. **Base
+  classes** are powerful but can become rigid — use them when your entities
+  genuinely share the same mutation patterns. Don't over-abstract too early;
+  start with direct definitions and extract patterns as they emerge.
+</Callout>

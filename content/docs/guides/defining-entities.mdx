@@ -15,28 +15,28 @@ Every entity in mobx-query extends the abstract `Entity` base class and must imp
 Here's a minimal entity definition:
 
 ```ts title="folder.entity.ts"
-import { Entity } from 'mobx-query/entity/Entity'
-import { observable } from 'mobx'
+import { Entity } from "mobx-query/entity/Entity";
+import { observable } from "mobx";
 
 interface FolderData {
-  id: string
-  name: string
-  description: string
-  isPinned: boolean
+  id: string;
+  name: string;
+  description: string;
+  isPinned: boolean;
 }
 
 export class Folder extends Entity<string, FolderData> {
-  id: string = crypto.randomUUID()
+  id: string = crypto.randomUUID();
 
-  @observable accessor name: string = ''
-  @observable accessor description: string = ''
-  @observable accessor isPinned: boolean = false
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
 
   hydrate(data: FolderData) {
-    this.id = data.id
-    this.name = data.name
-    this.description = data.description
-    this.isPinned = data.isPinned
+    this.id = data.id;
+    this.name = data.name;
+    this.description = data.description;
+    this.isPinned = data.isPinned;
   }
 }
 ```
@@ -44,7 +44,7 @@ export class Folder extends Entity<string, FolderData> {
 The `Entity` base class is generic and accepts two type parameters:
 
 ```ts
-Entity<TEntityId, TData>
+Entity<TEntityId, TData>;
 ```
 
 | Parameter   | Description                                                                                                                                |
@@ -58,7 +58,7 @@ Every entity **must** have an `id` property. This is how mobx-query identifies a
 
 ```ts
 export class Folder extends Entity<string, FolderData> {
-  id: string = crypto.randomUUID()
+  id: string = crypto.randomUUID();
   // ...
 }
 ```
@@ -93,13 +93,13 @@ By generating the ID client-side, the entity is immediately available in the UI,
 mobx-query provides a built-in utility for generating deterministic, client-only entity IDs:
 
 ```ts
-import { generateEntityId } from 'mobx-query/utils/generateEntityId'
-import { Folder } from './folder.entity'
+import { generateEntityId } from "mobx-query/utils/generateEntityId";
+import { Folder } from "./folder.entity";
 
-const id = generateEntityId(Folder)
+const id = generateEntityId(Folder);
 // => "entityClientOnlyId_Folder_1"
 
-const id2 = generateEntityId(Folder)
+const id2 = generateEntityId(Folder);
 // => "entityClientOnlyId_Folder_2"
 ```
 
@@ -118,22 +118,22 @@ Sometimes your data model doesn't have a single `id` field. For example, a join 
 The simplest approach is to concatenate the fields into a single string:
 
 ```ts title="document-label.entity.ts"
-import { Entity } from 'mobx-query/entity/Entity'
+import { Entity } from "mobx-query/entity/Entity";
 
 interface DocumentLabelData {
-  documentId: string
-  labelId: string
+  documentId: string;
+  labelId: string;
 }
 
 export class DocumentLabel extends Entity<string, DocumentLabelData> {
-  id: string = ''
-  documentId: string = ''
-  labelId: string = ''
+  id: string = "";
+  documentId: string = "";
+  labelId: string = "";
 
   hydrate(data: DocumentLabelData) {
-    this.documentId = data.documentId
-    this.labelId = data.labelId
-    this.id = `${data.documentId}:${data.labelId}`
+    this.documentId = data.documentId;
+    this.labelId = data.labelId;
+    this.id = `${data.documentId}:${data.labelId}`;
   }
 }
 ```
@@ -152,13 +152,13 @@ export class DocumentLabel extends Entity<string, DocumentLabelData> {
   // ...
 
   static createId(documentId: string, labelId: string) {
-    return `${documentId}:${labelId}`
+    return `${documentId}:${labelId}`;
   }
 
   hydrate(data: DocumentLabelData) {
-    this.documentId = data.documentId
-    this.labelId = data.labelId
-    this.id = DocumentLabel.createId(data.documentId, data.labelId)
+    this.documentId = data.documentId;
+    this.labelId = data.labelId;
+    this.id = DocumentLabel.createId(data.documentId, data.labelId);
   }
 }
 ```
@@ -188,47 +188,47 @@ In practice, the data shape for **creating** an entity often differs from the sh
 
 ```ts title="folder.entity.ts"
 interface SelectFolderData {
-  id: string
-  name: string
-  description: string
-  isPinned: boolean
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  name: string;
+  description: string;
+  isPinned: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface CreateFolderData {
-  name: string
-  description: string
-  isPinned: boolean
+  name: string;
+  description: string;
+  isPinned: boolean;
 }
 
 export class Folder extends Entity<
   string,
   SelectFolderData | CreateFolderData
 > {
-  id: string = crypto.randomUUID()
+  id: string = crypto.randomUUID();
 
-  createdAt: Date = new Date()
-  @observable accessor updatedAt: Date = new Date()
+  createdAt: Date = new Date();
+  @observable accessor updatedAt: Date = new Date();
 
-  @observable accessor name: string = ''
-  @observable accessor description: string = ''
-  @observable accessor isPinned: boolean = false
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
 
   hydrate(data: SelectFolderData | CreateFolderData) {
-    if ('id' in data) {
+    if ("id" in data) {
       // Full server data — set all fields including server-generated ones
-      this.id = data.id
-      this.createdAt = data.createdAt
-      this.updatedAt = data.updatedAt
-      this.name = data.name
-      this.description = data.description
-      this.isPinned = data.isPinned
+      this.id = data.id;
+      this.createdAt = data.createdAt;
+      this.updatedAt = data.updatedAt;
+      this.name = data.name;
+      this.description = data.description;
+      this.isPinned = data.isPinned;
     } else {
       // Partial create data — only set user-provided fields
-      this.name = data.name
-      this.description = data.description
-      this.isPinned = data.isPinned
+      this.name = data.name;
+      this.description = data.description;
+      this.isPinned = data.isPinned;
     }
   }
 }
@@ -244,30 +244,29 @@ This pattern works well because:
 If your query returns nested data (e.g. a document with its labels), you can hydrate related entities inside `hydrate()` using fragment queries:
 
 ```ts title="document.entity.ts"
-import { QueryFragmentMany } from 'mobx-query/queries/QueryFragmentMany'
-import { Label } from './label.entity'
+import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
+import { Label } from "./label.entity";
 
 export class Document extends Entity<string, DocumentData> {
-  id: string = crypto.randomUUID()
-  @observable accessor title: string = ''
+  id: string = crypto.randomUUID();
+  @observable accessor title: string = "";
 
   readonly labelsQuery = new QueryFragmentMany({
     entity: Label,
-    queryKey: () => ['documentLabels', this.id],
-    queryFn: (_, { db }) => {
-      return db.query.label.findMany({
-        where: { documentId: this.id },
-      })
+    queryKey: () => ["documentLabels", this.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/documents/${this.id}/labels`);
+      return res.json();
     },
-  })
+  });
 
   hydrate(data: DocumentData) {
-    this.id = data.id
-    this.title = data.title
+    this.id = data.id;
+    this.title = data.title;
 
     // Hydrate nested labels if they were included in the query
     if (data.labels) {
-      this.labelsQuery.setQueryData(data.labels, undefined)
+      this.labelsQuery.setQueryData(data.labels);
     }
   }
 }
@@ -278,7 +277,7 @@ export class Document extends Entity<string, DocumentData> {
 Every entity has a `state` property that tracks the lifecycle of the **currently active mutation**. The state is a simple observable string enum:
 
 ```ts
-type EntityState = 'pending' | 'confirmed' | 'failed'
+type EntityState = "pending" | "confirmed" | "failed";
 ```
 
 | State       | Meaning                                                                                      |
@@ -303,17 +302,17 @@ confirmed ─── mutation starts ───► pending
 The `state` property is `@observable`, so you can use it reactively in your components to show loading indicators, error states, or disable interactions:
 
 ```tsx title="FolderItem.tsx"
-import { observer } from 'mobx-react-lite'
+import { observer } from "mobx-react-lite";
 
 const FolderItem = observer(({ folder }: { folder: Folder }) => {
   return (
-    <div style={{ opacity: folder.state === 'pending' ? 0.6 : 1 }}>
+    <div style={{ opacity: folder.state === "pending" ? 0.6 : 1 }}>
       <span>{folder.name}</span>
-      {folder.state === 'pending' && <Spinner />}
-      {folder.state === 'failed' && <span>Failed to save</span>}
+      {folder.state === "pending" && <Spinner />}
+      {folder.state === "failed" && <span>Failed to save</span>}
     </div>
-  )
-})
+  );
+});
 ```
 
 <Callout type="info">
@@ -336,10 +335,10 @@ mobx-query automatically tracks whether an entity has been **locally modified** 
 
 ```ts
 const folder = // ... entity from a query
-  console.log(folder.isDirty) // false
+  console.log(folder.isDirty); // false
 
-folder.name = 'New Name'
-console.log(folder.isDirty) // true
+folder.name = "New Name";
+console.log(folder.isDirty); // true
 ```
 
 ### Fields That Are Ignored
@@ -351,13 +350,13 @@ The `state` and `isDirty` properties themselves are excluded from change trackin
 Call `entity.reset()` to restore all modified fields to their original server values:
 
 ```ts
-folder.name = 'New Name'
-folder.description = 'New Description'
-console.log(folder.isDirty) // true
+folder.name = "New Name";
+folder.description = "New Description";
+console.log(folder.isDirty); // true
 
-folder.reset()
-console.log(folder.name) // original server value
-console.log(folder.isDirty) // false
+folder.reset();
+console.log(folder.name); // original server value
+console.log(folder.isDirty); // false
 ```
 
 The `reset()` method:
@@ -375,11 +374,15 @@ The `reset()` method:
 readonly updateMutation = new UpdateMutation({
   entity: Folder,
   instance: this,
-  mutationFn: async (_, { db }) => {
-    await db.update(folder).set({
-      name: this.name,
-      description: this.description,
-    }).where(eq(folder.id, this.id));
+  mutationFn: async () => {
+    await fetch(`/api/folders/${this.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: this.name,
+        description: this.description,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
   },
 });
 
@@ -397,17 +400,17 @@ On a **successful mutation**, the dirty state is automatically cleared via `_cle
 The `isDirty` property is `@observable`, making it perfect for reactive UI patterns like enabling/disabling save buttons:
 
 ```tsx title="FolderEditor.tsx"
-import { observer } from 'mobx-react-lite'
+import { observer } from "mobx-react-lite";
 
 const FolderEditor = observer(({ folder }: { folder: Folder }) => {
-  const save = folder.updateMutation.useMutation()
+  const save = folder.updateMutation.useMutation();
 
   return (
     <div>
       <input
         value={folder.name}
         onChange={(e) => {
-          folder.name = e.target.value
+          folder.name = e.target.value;
         }}
       />
       <button onClick={save} disabled={!folder.isDirty}>
@@ -417,8 +420,8 @@ const FolderEditor = observer(({ folder }: { folder: Folder }) => {
         Discard Changes
       </button>
     </div>
-  )
-})
+  );
+});
 ```
 
 ## Declaring Observable Properties
@@ -434,8 +437,8 @@ Use the `@observable accessor` syntax (TC39 standard decorators) for properties 
 Properties that should **not** be tracked (like `id`, `createdAt`, or any immutable field) should be plain class fields:
 
 ```ts
-id: string = crypto.randomUUID()
-createdAt: Date = new Date()
+id: string = crypto.randomUUID();
+createdAt: Date = new Date();
 ```
 
 ### Computed Properties
@@ -443,13 +446,13 @@ createdAt: Date = new Date()
 Use `@computed get` for derived values that depend on observable properties:
 
 ```ts
-import { computed, observable } from 'mobx'
+import { computed, observable } from "mobx";
 
 export class Folder extends Entity<string, FolderData> {
-  @observable accessor name: string = ''
+  @observable accessor name: string = "";
 
   @computed get displayTitle() {
-    return this.name || 'Untitled folder'
+    return this.name || "Untitled folder";
   }
 }
 ```
@@ -461,95 +464,96 @@ Computed values are cached by MobX and only re-evaluated when their dependencies
 Here's a complete, real-world entity with queries, mutations, computed properties, and dirty tracking:
 
 ```ts title="folder.entity.ts"
-import { Entity } from 'mobx-query/entity/Entity'
-import { UpdateMutation } from 'mobx-query/mutations/UpdateMutation'
-import { DeleteMutation } from 'mobx-query/mutations/DeleteMutation'
-import { QueryMany } from 'mobx-query/queries/QueryMany'
-import { action, computed, observable } from 'mobx'
+import { Entity } from "mobx-query/entity/Entity";
+import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
+import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+import { QueryMany } from "mobx-query/queries/QueryMany";
+import { action, computed, observable } from "mobx";
 
 export class Folder extends Entity<
   string,
   SelectFolderData | CreateFolderData
 > {
   // Immutable identity — generated client-side for optimistic creates
-  id: string = crypto.randomUUID()
+  id: string = crypto.randomUUID();
 
   // Server-generated timestamps — not observable (won't trigger dirty)
-  createdAt: Date = new Date()
+  createdAt: Date = new Date();
 
   // Observable properties — tracked for dirty detection
-  @observable accessor updatedAt: Date = new Date()
-  @observable accessor name: string = ''
-  @observable accessor description: string = ''
-  @observable accessor isPinned: boolean = false
-  @observable accessor color: string | null = null
-  @observable accessor icon: string | null = null
+  @observable accessor updatedAt: Date = new Date();
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
+  @observable accessor color: string | null = null;
+  @observable accessor icon: string | null = null;
 
   // Computed — cached, derived from observables
   @computed get displayTitle() {
-    return this.name || 'Untitled folder'
+    return this.name || "Untitled folder";
   }
 
   // Sub-query — documents belonging to this folder
   readonly documentsQuery = new QueryMany({
     entity: Document,
-    queryKey: () => ['folderDocuments', this.id],
-    queryFn: (_, ctx) =>
-      ctx.db.query.document.findMany({
-        where: { folderId: this.id },
-      }),
-  })
+    queryKey: () => ["folderDocuments", this.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/folders/${this.id}/documents`);
+      return res.json();
+    },
+  });
 
   // Mutations — declared on the entity for co-located logic
   readonly updateMutation = new UpdateMutation({
     entity: Folder,
     instance: this,
-    mutationFn: async (_, { db }) => {
-      await db
-        .update(folder)
-        .set({
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
           name: this.name,
           description: this.description,
           color: this.color,
           icon: this.icon,
           isPinned: this.isPinned,
-        })
-        .where(eq(folder.id, this.id))
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
     },
-    invalidationStrategy: 'all-queries',
-  })
+    invalidationStrategy: "all-entity-queries",
+  });
 
   readonly deleteMutation = new DeleteMutation({
     entity: Folder,
     instance: this,
-    mutationFn: async (_, { db }) => {
-      await db.delete(folder).where(eq(folder.id, this.id))
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, { method: "DELETE" });
     },
-  })
+  });
 
   // Actions — modify observable state and trigger mutations
   @action onPinFolder() {
-    this.isPinned = !this.isPinned
-    this.updateMutation.mutate()
+    this.isPinned = !this.isPinned;
+    this.updateMutation.mutate();
   }
 
   // Hydrate — maps raw data onto observable properties
   hydrate(data: SelectFolderData | CreateFolderData) {
-    if ('id' in data) {
-      this.id = data.id
-      this.createdAt = data.createdAt
-      this.updatedAt = data.updatedAt
-      this.name = data.name ?? ''
-      this.description = data.description ?? ''
-      this.isPinned = data.isPinned ?? false
-      this.color = data.color ?? null
-      this.icon = data.icon ?? null
+    if ("id" in data) {
+      this.id = data.id;
+      this.createdAt = data.createdAt;
+      this.updatedAt = data.updatedAt;
+      this.name = data.name ?? "";
+      this.description = data.description ?? "";
+      this.isPinned = data.isPinned ?? false;
+      this.color = data.color ?? null;
+      this.icon = data.icon ?? null;
     } else {
-      this.name = data.name ?? ''
-      this.description = data.description ?? ''
-      this.isPinned = data.isPinned ?? false
-      this.color = data.color ?? null
-      this.icon = data.icon ?? null
+      this.name = data.name ?? "";
+      this.description = data.description ?? "";
+      this.isPinned = data.isPinned ?? false;
+      this.color = data.color ?? null;
+      this.icon = data.icon ?? null;
     }
   }
 }

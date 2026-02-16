@@ -1,19 +1,17 @@
 ---
 title: Mutations
-description: Create, update, delete, and manage entity relations with built-in optimistic updates and configurable rollback strategies.
+description: Create, update, and delete entities with built-in optimistic updates and configurable rollback strategies.
 ---
 
-Mutations in mobx-query handle **write operations** — creating new entities, updating existing ones, deleting records, and managing many-to-many relations. Every mutation class integrates with TanStack Query's mutation cache and provides built-in optimistic update behavior with configurable strategies.
+Mutations in mobx-query handle **write operations** — creating new entities, updating existing ones, and deleting records. Every mutation class integrates with TanStack Query's mutation cache and provides built-in optimistic update behavior with configurable strategies.
 
-mobx-query provides five mutation classes:
+mobx-query provides three mutation classes:
 
-| Class                    | Purpose                                       | Defined on      |
-| ------------------------ | --------------------------------------------- | --------------- |
-| `CreateMutation`         | Insert a new entity                           | Store           |
-| `UpdateMutation`         | Modify an existing entity's fields            | Entity instance |
-| `DeleteMutation`         | Remove an entity                              | Entity instance |
-| `AddRelationMutation`    | Add an entity ID to a query's result set      | Entity instance |
-| `RemoveRelationMutation` | Remove an entity ID from a query's result set | Entity instance |
+| Class            | Purpose                            | Defined on      |
+| ---------------- | ---------------------------------- | --------------- |
+| `CreateMutation` | Insert a new entity                | Store           |
+| `UpdateMutation` | Modify an existing entity's fields | Entity instance |
+| `DeleteMutation` | Remove an entity                   | Entity instance |
 
 ## CreateMutation
 
@@ -33,61 +31,62 @@ mobx-query provides five mutation classes:
 ### Defining a CreateMutation
 
 ```ts title="folders.store.ts"
-import { CreateMutation } from 'mobx-query/mutations/CreateMutation'
-import { Folder } from './folder.entity'
+import { CreateMutation } from "mobx-query/mutations/CreateMutation";
+import { Folder } from "./folder.entity";
 
 interface CreateFolderInput {
-  name: string
-  description: string
+  name: string;
+  description: string;
 }
 
 export class FoldersStore {
   readonly createFolder = new CreateMutation<CreateFolderInput, typeof Folder>({
     entity: Folder,
-    mutationFn: async (input, entity, ctx) => {
+    mutationFn: async (input, entity) => {
       // `entity` is the already-hydrated Folder instance
-      await fetch('/api/folders', {
-        method: 'POST',
+      await fetch("/api/folders", {
+        method: "POST",
         body: JSON.stringify({ id: entity.id, ...input }),
-      })
+        headers: { "Content-Type": "application/json" },
+      });
     },
-    invalidationStrategy: 'all-queries',
-  })
+    invalidationStrategy: "all-entity-queries",
+  });
 }
 ```
 
 The options object:
 
-| Option                    | Type                                           | Description                                                                                                       |
-| ------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `entity`                  | Entity constructor                             | The entity class to create (e.g. `Folder`)                                                                        |
-| `mutationFn`              | `(input, entity, context) => Promise<void>`    | The server-side write function. Receives the raw input, the hydrated entity instance, and your registered context |
-| `invalidationStrategy`    | `'all-queries' \| 'related-queries' \| 'none'` | Which queries to invalidate on success (see [Invalidation Strategies](#invalidation-strategies))                  |
-| `onMutationErrorStrategy` | `'rollback' \| 'keep'`                         | What to do with the entity on error (see [Error Strategies](#error-strategies))                                   |
-| `onMutate`                | Callback                                       | Called before the mutation runs. Receives `(input, entity)`                                                       |
-| `onSuccess`               | Callback                                       | Called on success. Receives `(input, entity, context)`                                                            |
-| `onError`                 | Callback                                       | Called on error. Receives `(error, input, context)`                                                               |
-| `onSettled`               | Callback                                       | Called on both success and error. Receives `(input, error, entity, context)`                                      |
+| Option                 | Type                                        | Description                                                                                                       |
+| ---------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `entity`               | Entity constructor                          | The entity class to create (e.g. `Folder`)                                                                        |
+| `mutationFn`           | `(input, entity, context) => Promise<void>` | The server-side write function. Receives the raw input, the hydrated entity instance, and your registered context |
+| `invalidationStrategy` | Strategy                                    | Which queries to invalidate on success (see [Invalidation Strategies](#invalidation-strategies))                  |
+| `errorStrategy`        | `'rollback' \| 'keep'`                      | What to do with the entity on error (see [Error Strategies](#error-strategies))                                   |
+| `onMutate`             | Callback                                    | Called before the mutation runs. Receives `(input, entity)`                                                       |
+| `onSuccess`            | Callback                                    | Called on success. Receives `(input, entity, context)`                                                            |
+| `onError`              | Callback                                    | Called on error. Receives `(error, input, context)`                                                               |
+| `onSettled`            | Callback                                    | Called on both success and error. Receives `(input, error, entity, context)`                                      |
 
 ### Using in React
 
 `CreateMutation` exposes a `useMutation()` hook that returns a trigger function:
 
 ```tsx
-import { observer } from 'mobx-react-lite'
+import { observer } from "mobx-react-lite";
 
 const CreateFolderButton = observer(() => {
-  const { rootStore } = useMQ()
-  const createFolder = rootStore.folders.createFolder.useMutation()
+  const { rootStore } = useMQ();
+  const createFolder = rootStore.folders.createFolder.useMutation();
 
   return (
     <button
-      onClick={() => createFolder({ name: 'New Folder', description: '' })}
+      onClick={() => createFolder({ name: "New Folder", description: "" })}
     >
       Create Folder
     </button>
-  )
-})
+  );
+});
 ```
 
 The folder appears in the UI **immediately** after clicking — before the server responds.
@@ -112,59 +111,60 @@ The folder appears in the UI **immediately** after clicking — before the serve
 Update mutations are defined **on the entity itself**, because they operate on `this` — the entity's current observable state:
 
 ```ts title="folder.entity.ts"
-import { UpdateMutation } from 'mobx-query/mutations/UpdateMutation'
+import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
 
 export class Folder extends Entity<string, FolderData> {
-  @observable accessor name: string = ''
-  @observable accessor description: string = ''
-  @observable accessor isPinned: boolean = false
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
 
   readonly updateMutation = new UpdateMutation({
     entity: Folder,
     instance: this,
-    mutationFn: async (_, { db }) => {
-      await db
-        .update(folder)
-        .set({
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
           name: this.name,
           description: this.description,
           isPinned: this.isPinned,
-        })
-        .where(eq(folder.id, this.id))
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
     },
-    invalidationStrategy: 'all-queries',
-  })
+    invalidationStrategy: "all-entity-queries",
+  });
 }
 ```
 
-| Option                    | Type                                | Description                                                   |
-| ------------------------- | ----------------------------------- | ------------------------------------------------------------- |
-| `entity`                  | Entity constructor                  | The entity class (used for invalidation key grouping)         |
-| `instance`                | Entity instance                     | The entity instance this mutation operates on — always `this` |
-| `mutationFn`              | `(input, context) => Promise<void>` | The server-side write function. Reads values from `this`      |
-| `invalidationStrategy`    | Strategy                            | Which queries to invalidate on success                        |
-| `onMutationErrorStrategy` | Strategy                            | What to do on error (`'rollback'` restores original values)   |
+| Option                 | Type                                | Description                                                   |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------------- |
+| `entity`               | Entity constructor                  | The entity class (used for invalidation key grouping)         |
+| `instance`             | Entity instance                     | The entity instance this mutation operates on — always `this` |
+| `mutationFn`           | `(input, context) => Promise<void>` | The server-side write function. Reads values from `this`      |
+| `invalidationStrategy` | Strategy                            | Which queries to invalidate on success                        |
+| `errorStrategy`        | Strategy                            | What to do on error (`'rollback'` restores original values)   |
 
 ### Using in React
 
 ```tsx
 const FolderEditor = observer(({ folder }: { folder: Folder }) => {
-  const save = folder.updateMutation.useMutation()
+  const save = folder.updateMutation.useMutation();
 
   return (
     <div>
       <input
         value={folder.name}
         onChange={(e) => {
-          folder.name = e.target.value
+          folder.name = e.target.value;
         }}
       />
       <button onClick={save} disabled={!folder.isDirty}>
         Save
       </button>
     </div>
-  )
-})
+  );
+});
 ```
 
 ### Calling Without React
@@ -204,17 +204,17 @@ Update mutations can also be called **outside of React** using the `mutate()` me
 Like `UpdateMutation`, delete mutations are defined on the entity:
 
 ```ts title="folder.entity.ts"
-import { DeleteMutation } from 'mobx-query/mutations/DeleteMutation'
+import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
 
 export class Folder extends Entity<string, FolderData> {
   readonly deleteMutation = new DeleteMutation({
     entity: Folder,
     instance: this,
-    mutationFn: async (_, { db }) => {
-      await db.delete(folder).where(eq(folder.id, this.id))
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, { method: "DELETE" });
     },
-    invalidationStrategy: 'all-queries',
-  })
+    invalidationStrategy: "all-entity-queries",
+  });
 }
 ```
 
@@ -223,12 +223,12 @@ export class Folder extends Entity<string, FolderData> {
 ```tsx
 // React hook
 const FolderItem = observer(({ folder }: { folder: Folder }) => {
-  const deleteFolder = folder.deleteMutation.useMutation()
-  return <button onClick={deleteFolder}>Delete</button>
-})
+  const deleteFolder = folder.deleteMutation.useMutation();
+  return <button onClick={deleteFolder}>Delete</button>;
+});
 
 // Direct call (e.g. from an action or event handler)
-folder.deleteMutation.mutate()
+folder.deleteMutation.mutate();
 ```
 
 <Callout type="warn">
@@ -238,161 +238,74 @@ folder.deleteMutation.mutate()
   entity simply reappears.
 </Callout>
 
-## Relation Mutations
-
-`AddRelationMutation` and `RemoveRelationMutation` handle **many-to-many relationships** — scenarios where you're not creating or deleting entities, but adding or removing an entity from a specific query's result set.
-
-### The Problem They Solve
-
-Consider a `Document` that has many `Label` entities (via a join table). When you add a label to a document:
-
-- The `Label` entity already exists in the `EntityManager`.
-- You're not creating a new entity — you're adding a **relationship**.
-- The `labelsQuery` on the document should optimistically show the newly associated label.
-
-Relation mutations solve this by directly manipulating the **ID array** stored in a query's TanStack cache.
-
-### AddRelationMutation
-
-Optimistically appends an entity ID to a query's cached result set, then runs the actual mutation:
-
-```ts title="document.entity.ts"
-import { AddRelationMutation } from 'mobx-query/mutations/RelationMutation'
-
-export class Document extends Entity<string, DocumentData> {
-  readonly labelsQuery = new QueryFragmentMany({
-    entity: Label,
-    queryKey: () => ['documentLabels', this.id],
-    queryFn: (_, { db }) => {
-      /* ... */
-    },
-  })
-
-  readonly addLabelMutation = new AddRelationMutation<string>({
-    query: this.labelsQuery,
-    mutationFn: async (labelId, { db }) => {
-      await db.insert(documentLabel).values({
-        documentId: this.id,
-        labelId,
-      })
-    },
-  })
-}
-```
-
-**Flow:**
-
-1. Snapshots the current ID array from the query cache.
-2. Appends the new ID (if not already present).
-3. Runs `mutationFn` asynchronously.
-4. On **success**: invalidates the query.
-5. On **error**: restores the original ID array (rollback).
-
-**Usage:**
-
-```ts
-// Add label 'label-42' to this document
-document.addLabelMutation.mutate('label-42')
-```
-
-### RemoveRelationMutation
-
-The inverse — optimistically removes an entity ID from a query's cached result set:
-
-```ts title="document.entity.ts"
-import { RemoveRelationMutation } from 'mobx-query/mutations/RelationMutation'
-
-export class Document extends Entity<string, DocumentData> {
-  readonly removeLabelMutation = new RemoveRelationMutation<string>({
-    query: this.labelsQuery,
-    mutationFn: async (labelId, { db }) => {
-      await db
-        .delete(documentLabel)
-        .where(
-          and(
-            eq(documentLabel.documentId, this.id),
-            eq(documentLabel.labelId, labelId),
-          ),
-        )
-    },
-  })
-}
-```
-
-**Flow:**
-
-1. Snapshots the current ID array.
-2. Filters out the target ID.
-3. Runs `mutationFn` asynchronously.
-4. On **success**: invalidates the query.
-5. On **error**: restores the original ID array.
-
-### Relation Mutation Options
-
-| Option                 | Type                                | Description                                              |
-| ---------------------- | ----------------------------------- | -------------------------------------------------------- |
-| `query`                | `QueryManyBase` instance            | The query whose cached ID array to manipulate            |
-| `mutationFn`           | `(input, context) => Promise<void>` | The server-side write function                           |
-| `queryArgs`            | `unknown` (optional)                | Arguments for query key resolution. Default: `undefined` |
-| `invalidationStrategy` | Strategy (optional)                 | Defaults to `'related-queries'`                          |
-
-<Callout type="info">
-  Relation mutations only operate on the **ID array** in the query cache. They
-  don't create or delete entity instances. The entity being added must already
-  exist in the `EntityManager` (e.g. it was fetched by another query).
-</Callout>
-
 ## Invalidation Strategies
 
 After a successful mutation, mobx-query needs to decide which queries to refetch so the UI stays consistent with the server. The `invalidationStrategy` option controls this behavior.
 
 ```ts
 type OptimisticMutationInvalidationStrategy =
-  | 'all-queries'
-  | 'related-queries'
-  | 'none'
+  | "all-queries"
+  | "all-entity-queries"
+  | "referenced-queries"
+  | "none";
 ```
 
 ### `'all-queries'`
 
-Invalidates **every query** that returns the same entity type. This is the broadest and safest strategy.
+Invalidates **every query** across the entire application — regardless of entity type. This is the broadest possible strategy.
+
+```ts
+invalidationStrategy: "all-queries";
+```
+
+Under the hood, this calls:
+
+```ts
+queryClient.invalidateQueries();
+```
+
+**When to use**: For mutations that have cross-entity side effects (e.g. deleting a folder also affects document queries). Use sparingly — this triggers refetches for every active query.
+
+### `'all-entity-queries'`
+
+Invalidates **every query** that returns the **same entity type** as the mutation. This is the most common choice for creates and deletes.
 
 ```ts
 // After creating a folder, all Folder queries are invalidated:
 // - foldersPreviewQuery
 // - folderByIdQuery
 // - any other query using entity: Folder
-invalidationStrategy: 'all-queries'
+invalidationStrategy: "all-entity-queries";
 ```
 
 Under the hood, this calls:
 
 ```ts
-queryClient.invalidateQueries({ queryKey: ['Folder'] })
+queryClient.invalidateQueries({ queryKey: ["Folder"] });
 ```
 
 Since all Folder queries have `'Folder'` as their first key segment, this matches every one of them.
 
-**When to use**: For mutations that change the total set of entities (creates, deletes) or modify fields that could affect sort order or filtering in other queries. This is the most common choice.
+**When to use**: For mutations that change the total set of entities (creates, deletes) or modify fields that could affect sort order or filtering in other queries.
 
-### `'related-queries'`
+### `'referenced-queries'` (default)
 
 Invalidates only the queries that **directly reference the mutated entity** — determined by the entity's `queryHashes` set.
 
 ```ts
-invalidationStrategy: 'related-queries'
+invalidationStrategy: "referenced-queries";
 ```
 
 For example, if a `Folder` entity appears in `foldersPreviewQuery` and `folderByIdQuery`, only those two queries are refetched — not a `recentFoldersQuery` that doesn't include this particular folder.
 
-**When to use**: When a mutation only affects the mutated entity itself (e.g. renaming a folder) and you want to minimize unnecessary refetches.
+**When to use**: When a mutation only affects the mutated entity itself (e.g. renaming a folder) and you want to minimize unnecessary refetches. This is the default strategy.
 
 ### `'none'`
 
 Skips all invalidation. No queries are refetched after the mutation succeeds.
 
 ```ts
-invalidationStrategy: 'none'
+invalidationStrategy: "none";
 ```
 
 **When to use**: For high-frequency mutations where you trust the optimistic state (e.g. auto-saving document content on every keystroke). You might manually invalidate later or rely on the user navigating away and back.
@@ -400,27 +313,54 @@ invalidationStrategy: 'none'
 ### Comparing Strategies
 
 ```
-┌───────────────────────────────────────────────────────┐
-│                    Mutation succeeds                   │
-├──────────────────┬──────────────────┬────────────────┤
-│   'all-queries'  │ 'related-queries'│     'none'     │
-├──────────────────┼──────────────────┼────────────────┤
-│ Invalidate ALL   │ Invalidate ONLY  │ No invalidation│
-│ queries for this │ queries that     │                │
-│ entity type      │ reference this   │                │
-│                  │ specific entity  │                │
-├──────────────────┼──────────────────┼────────────────┤
-│ Broadest, safest │ Targeted,        │ Manual control │
-│                  │ efficient        │                │
-└──────────────────┴──────────────────┴────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           Mutation succeeds                                  │
+├───────────────────┬────────────────────┬────────────────────┬────────────────┤
+│   'all-queries'   │'all-entity-queries'│'referenced-queries'│     'none'     │
+├───────────────────┼────────────────────┼────────────────────┼────────────────┤
+│ Invalidate ALL    │ Invalidate ALL     │ Invalidate ONLY    │ No invalidation│
+│ queries in the    │ queries for this   │ queries that       │                │
+│ entire app        │ entity type        │ reference this     │                │
+│                   │                    │ specific entity    │                │
+├───────────────────┼────────────────────┼────────────────────┼────────────────┤
+│ Broadest, nuclear │ Broad, safe for    │ Targeted,          │ Manual control │
+│                   │ entity collections │ efficient (default)│                │
+└───────────────────┴────────────────────┴────────────────────┴────────────────┘
 ```
+
+### Global Defaults
+
+You can configure the default invalidation strategy for all mutations when initializing `MQClient`:
+
+```ts
+const client = new MQClient({
+  context: { queryClient },
+  entities: [Folder, Document],
+  rootStore: () => new RootStore(),
+  invalidationStrategy: "all-entity-queries", // default for all mutations
+  errorStrategy: "rollback", // default for all mutations
+});
+```
+
+Individual mutations can override the global default:
+
+```ts
+readonly updateMutation = new UpdateMutation({
+  entity: Folder,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'none', // overrides the global default
+})
+```
+
+If no default is specified, `'referenced-queries'` is used.
 
 ## Error Strategies
 
 When a mutation **fails**, you can configure what happens to the entity's local state:
 
 ```ts
-type OptimisticMutationErrorStrategy = 'rollback' | 'keep'
+type OptimisticMutationErrorStrategy = "rollback" | "keep";
 ```
 
 ### `'rollback'` (default)
@@ -430,14 +370,13 @@ Reverts the entity to its previous state:
 - **`UpdateMutation`**: calls `entity.reset()`, restoring all `@observable accessor` fields to their server-confirmed values.
 - **`CreateMutation`**: removes the entity from the `EntityManager` collection entirely.
 - **`DeleteMutation`**: removes the entity's ID from `deletedRecordIds`, making it reappear in all query results.
-- **Relation mutations**: restore the previous ID array from the snapshot.
 
 ```ts
 readonly updateMutation = new UpdateMutation({
   entity: Folder,
   instance: this,
-  mutationFn: async (_, ctx) => { /* ... */ },
-  onMutationErrorStrategy: 'rollback', // default — reverts on error
+  mutationFn: async () => { /* ... */ },
+  errorStrategy: 'rollback', // default — reverts on error
 });
 ```
 
@@ -449,8 +388,8 @@ Preserves the optimistic state even after an error. The entity keeps its locally
 readonly updateMutation = new UpdateMutation({
   entity: Folder,
   instance: this,
-  mutationFn: async (_, ctx) => { /* ... */ },
-  onMutationErrorStrategy: 'keep', // keep local changes, let the user retry
+  mutationFn: async () => { /* ... */ },
+  errorStrategy: 'keep', // keep local changes, let the user retry
 });
 ```
 
@@ -465,18 +404,18 @@ You can mix invalidation and error strategies for fine-grained control:
 readonly autoSaveMutation = new UpdateMutation({
   entity: Document,
   instance: this,
-  mutationFn: async (_, ctx) => { /* ... */ },
+  mutationFn: async () => { /* ... */ },
   invalidationStrategy: 'none',
-  onMutationErrorStrategy: 'keep',
+  errorStrategy: 'keep',
 });
 
 // Critical write: refetch everything, rollback on error
 readonly publishMutation = new UpdateMutation({
   entity: Document,
   instance: this,
-  mutationFn: async (_, ctx) => { /* ... */ },
-  invalidationStrategy: 'all-queries',
-  onMutationErrorStrategy: 'rollback',
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'all-entity-queries',
+  errorStrategy: 'rollback',
 });
 ```
 
@@ -501,16 +440,16 @@ const FolderActions = observer(({ folder }: { folder: Folder }) => {
     <div>
       <button
         onClick={() => folder.deleteMutation.mutate()}
-        disabled={folder.state === 'pending'}
+        disabled={folder.state === "pending"}
       >
-        {folder.state === 'pending' ? 'Deleting...' : 'Delete'}
+        {folder.state === "pending" ? "Deleting..." : "Delete"}
       </button>
-      {folder.state === 'failed' && (
+      {folder.state === "failed" && (
         <span className="error">Operation failed. Please try again.</span>
       )}
     </div>
-  )
-})
+  );
+});
 ```
 
 ## Lifecycle Callbacks
@@ -527,7 +466,13 @@ All mutation classes (`CreateMutation`, `UpdateMutation`, `DeleteMutation`) supp
 ```ts
 readonly createFolder = new CreateMutation<CreateFolderInput, typeof Folder>({
   entity: Folder,
-  mutationFn: async (input, entity, ctx) => { /* ... */ },
+  mutationFn: async (input, entity) => {
+    await fetch('/api/folders', {
+      method: 'POST',
+      body: JSON.stringify({ id: entity.id, ...input }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  },
   onMutate: (input, entity) => {
     console.log('Creating folder:', entity.id);
   },
@@ -547,13 +492,3 @@ readonly createFolder = new CreateMutation<CreateFolderInput, typeof Folder>({
   using `'rollback'` strategy). This means you can safely inspect `entity.state`
   and `entity.isDirty` in callbacks and they'll reflect the post-strategy state.
 </Callout>
-
-## Summary
-
-| Mutation                 | Optimistic behavior                     | Rollback on error                           | Defined on |
-| ------------------------ | --------------------------------------- | ------------------------------------------- | ---------- |
-| `CreateMutation`         | Entity instantly added to collection    | Entity removed from collection              | Store      |
-| `UpdateMutation`         | Entity fields already modified via MobX | `entity.reset()` reverts to original values | Entity     |
-| `DeleteMutation`         | Entity hidden from all query results    | Entity reappears in query results           | Entity     |
-| `AddRelationMutation`    | Entity ID appended to query's ID array  | ID array restored from snapshot             | Entity     |
-| `RemoveRelationMutation` | Entity ID removed from query's ID array | ID array restored from snapshot             | Entity     |

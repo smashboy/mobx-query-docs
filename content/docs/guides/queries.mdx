@@ -21,18 +21,18 @@ Use `QueryMany` to define queries that return **a list of entities**. This is th
 ### Defining a QueryMany
 
 ```ts title="folders.store.ts"
-import { QueryMany } from 'mobx-query/queries/QueryMany'
-import { Folder } from './folder.entity'
+import { QueryMany } from "mobx-query/queries/QueryMany";
+import { Folder } from "./folder.entity";
 
 export class FoldersStore {
   readonly foldersQuery = new QueryMany({
     entity: Folder,
-    queryKey: () => ['folders'],
+    queryKey: () => ["all"],
     queryFn: async (_, ctx) => {
-      const res = await fetch('/api/folders')
-      return res.json()
+      const res = await fetch("/api/folders");
+      return res.json();
     },
-  })
+  });
 }
 ```
 
@@ -55,12 +55,12 @@ The options object has the following shape:
 Suspends the component until data is available. Returns a **guaranteed non-empty** entity array (no loading states to handle):
 
 ```tsx
-import { observer } from 'mobx-react-lite'
-import { Suspense } from 'react'
+import { observer } from "mobx-react-lite";
+import { Suspense } from "react";
 
 const FolderList = observer(() => {
-  const { rootStore } = useMQ()
-  const folders = rootStore.folders.foldersQuery.useSuspenseQuery(undefined)
+  const { rootStore } = useMQ();
+  const folders = rootStore.folders.foldersQuery.useSuspenseQuery();
 
   return (
     <ul>
@@ -68,13 +68,13 @@ const FolderList = observer(() => {
         <li key={folder.id}>{folder.displayTitle}</li>
       ))}
     </ul>
-  )
-})
+  );
+});
 
 // Wrap with Suspense boundary
-;<Suspense fallback={<Loading />}>
+<Suspense fallback={<Loading />}>
   <FolderList />
-</Suspense>
+</Suspense>;
 ```
 
 #### `useQuery(args, enabled?)`
@@ -83,8 +83,8 @@ A non-suspense variant that returns entities immediately (empty array until load
 
 ```tsx
 const FolderList = observer(() => {
-  const { rootStore } = useMQ()
-  const folders = rootStore.folders.foldersQuery.useQuery(undefined)
+  const { rootStore } = useMQ();
+  const folders = rootStore.folders.foldersQuery.useQuery();
 
   // folders is [] while loading, then populated
   return (
@@ -93,8 +93,8 @@ const FolderList = observer(() => {
         <li key={folder.id}>{folder.displayTitle}</li>
       ))}
     </ul>
-  )
-})
+  );
+});
 ```
 
 ### Query Arguments
@@ -105,10 +105,9 @@ The first type parameter of `QueryMany` defines the shape of the arguments passe
 readonly documentsByFolderQuery = new QueryMany({
   entity: Document,
   queryKey: () => ['documentsByFolder'],
-  queryFn: async (folderId: string, ctx) => {
-    return ctx.db.query.document.findMany({
-      where: { folderId },
-    });
+  queryFn: async (folderId: string) => {
+    const res = await fetch(`/api/folders/${folderId}/documents`);
+    return res.json();
   },
 });
 
@@ -116,7 +115,7 @@ readonly documentsByFolderQuery = new QueryMany({
 const docs = documentsByFolderQuery.useSuspenseQuery('folder-123');
 ```
 
-If your query doesn't need arguments, use `undefined` as the argument type and pass `undefined` when calling hooks.
+If your query doesn't need arguments, simply call the hook with no arguments.
 
 ## QueryOne
 
@@ -125,18 +124,18 @@ Use `QueryOne` to fetch a **single entity** by its identifier or any unique crit
 ### Defining a QueryOne
 
 ```ts title="folders.store.ts"
-import { QueryOne } from 'mobx-query/queries/QueryOne'
-import { Folder } from './folder.entity'
+import { QueryOne } from "mobx-query/queries/QueryOne";
+import { Folder } from "./folder.entity";
 
 export class FoldersStore {
   readonly folderByIdQuery = new QueryOne({
     entity: Folder,
-    queryKey: () => ['folderById'],
+    queryKey: () => ["byId"],
     queryFn: async (folderId: string, ctx) => {
-      const res = await fetch(`/api/folders/${folderId}`)
-      return res.json()
+      const res = await fetch(`/api/folders/${folderId}`);
+      return res.json();
     },
-  })
+  });
 }
 ```
 
@@ -146,16 +145,16 @@ export class FoldersStore {
 
 ```tsx
 const FolderDetail = observer(({ folderId }: { folderId: string }) => {
-  const { rootStore } = useMQ()
-  const folder = rootStore.folders.folderByIdQuery.useSuspenseQuery(folderId)
+  const { rootStore } = useMQ();
+  const folder = rootStore.folders.folderByIdQuery.useSuspenseQuery(folderId);
 
   return (
     <div>
       <h1>{folder.displayTitle}</h1>
       <p>{folder.description}</p>
     </div>
-  )
-})
+  );
+});
 ```
 
 ## How Query Keys Work Under the Hood
@@ -175,31 +174,31 @@ For example, given this query definition:
 ```ts
 const foldersQuery = new QueryMany({
   entity: Folder,
-  queryKey: () => ['folders', 'recent'],
+  queryKey: () => ["recent"],
   queryFn: async (limit: number) => {
     /* ... */
   },
-})
+});
 ```
 
 When called with `foldersQuery.useSuspenseQuery(5)`, the actual TanStack Query key becomes:
 
 ```ts
-;['Folder', '__query__many__', 'folders', 'recent', 5]
+["Folder", "__query__many__", "recent", 5];
 ```
 
-| Segment               | Source                  | Purpose                                                              |
-| --------------------- | ----------------------- | -------------------------------------------------------------------- |
-| `'Folder'`            | Entity constructor name | Groups all queries for this entity type — used for bulk invalidation |
-| `'__query__many__'`   | Internal query prefix   | Distinguishes between `QueryMany`, `QueryOne`, and fragment variants |
-| `'folders', 'recent'` | Your `queryKey()`       | Your custom logical identifier                                       |
-| `5`                   | `args`                  | The runtime arguments passed to the hook                             |
+| Segment             | Source                  | Purpose                                                              |
+| ------------------- | ----------------------- | -------------------------------------------------------------------- |
+| `'Folder'`          | Entity constructor name | Groups all queries for this entity type — used for bulk invalidation |
+| `'__query__many__'` | Internal query prefix   | Distinguishes between `QueryMany`, `QueryOne`, and fragment variants |
+| `'recent'`          | Your `queryKey()`       | Your custom logical identifier                                       |
+| `5`                 | `args`                  | The runtime arguments passed to the hook                             |
 
 ### Why This Matters
 
 The entity name prefix enables powerful features:
 
-1. **Bulk invalidation** — After a `CreateMutation` with `invalidationStrategy: 'all-queries'`, mobx-query can call `queryClient.invalidateQueries({ queryKey: ['Folder'] })` to invalidate _every_ query related to the `Folder` entity.
+1. **Bulk invalidation** — After a `CreateMutation` with `invalidationStrategy: 'all-entity-queries'`, mobx-query can call `queryClient.invalidateQueries({ queryKey: ['Folder'] })` to invalidate _every_ query related to the `Folder` entity.
 
 2. **Query hash tracking** — Each entity instance stores a set of `queryHashes` linking it to the TanStack Query cache entries that reference it. When a cache entry is garbage collected, mobx-query removes the hash from all entities and cleans up orphaned entities automatically.
 
@@ -211,7 +210,7 @@ A crucial architecture detail: mobx-query does **not** store raw data in TanStac
 
 ```
 TanStack Query cache entry:
-  key: ['Folder', '__query__many__', 'folders']
+  key: ['Folder', '__query__many__', 'all']
   data: ['id-1', 'id-2', 'id-3']  // ← entity IDs, not raw data
 ```
 
@@ -227,7 +226,7 @@ Pre-fetches data and populates the cache **before** a component renders. Useful 
 
 ```ts
 // In a route loader
-await foldersQuery.prefetch(undefined);
+await foldersQuery.prefetch();
 
 // On hover
 onMouseEnter={() => folderByIdQuery.prefetch(folderId)}
@@ -238,7 +237,7 @@ onMouseEnter={() => folderByIdQuery.prefetch(folderId)}
 Similar to `prefetch`, but **returns the data** if it already exists in the cache. Only fetches if the cache is empty:
 
 ```ts
-const entityIds = await foldersQuery.ensureData(undefined)
+const entityIds = await foldersQuery.ensureData();
 ```
 
 ### `invalidate(args)`
@@ -247,10 +246,10 @@ Manually invalidates a specific query cache entry by its arguments. If the query
 
 ```ts
 // Invalidate a specific parameterized query
-foldersQuery.invalidate(undefined)
+foldersQuery.invalidate();
 
 // Invalidate a specific folder detail
-folderByIdQuery.invalidate('folder-123')
+folderByIdQuery.invalidate("folder-123");
 ```
 
 <Callout type="info">
@@ -266,10 +265,10 @@ Manually injects data into the query cache **without fetching**. The data is hyd
 
 ```ts
 // Inject a list of folders into the cache
-foldersQuery.setQueryData(serverFolders, undefined)
+foldersQuery.setQueryData(serverFolders);
 
 // Inject a single folder
-folderByIdQuery.setQueryData(folderRecord, 'folder-123')
+folderByIdQuery.setQueryData(folderRecord, "folder-123");
 ```
 
 This is useful for:
@@ -283,7 +282,7 @@ This is useful for:
 Returns the current array of entity IDs stored in the TanStack Query cache for a given set of arguments:
 
 ```ts
-const ids = foldersQuery.getQueryIds(undefined)
+const ids = foldersQuery.getQueryIds();
 // => ['id-1', 'id-2', 'id-3']
 ```
 
@@ -292,7 +291,7 @@ const ids = foldersQuery.getQueryIds(undefined)
 Directly sets the entity ID array in the cache. Used internally by relation mutations for optimistic updates:
 
 ```ts
-foldersQuery.setQueryIds(['id-1', 'id-2', 'id-4'], undefined)
+foldersQuery.setQueryIds(["id-1", "id-2", "id-4"]);
 ```
 
 ### `getQueryKey(args)` (QueryMany only)
@@ -300,7 +299,7 @@ foldersQuery.setQueryIds(['id-1', 'id-2', 'id-4'], undefined)
 Returns the full constructed query key for a given set of arguments. Useful when integrating with TanStack Query directly:
 
 ```ts
-const queryKey = foldersQuery.getQueryKey(undefined)
+const queryKey = foldersQuery.getQueryKey();
 // => ['Folder', '__query__many__', 'folders']
 ```
 
@@ -330,32 +329,31 @@ The key difference is that fragments have `staleTime: Infinity` and `gcTime: Inf
 Fragments are typically declared as `readonly` properties on an entity:
 
 ```ts title="document.entity.ts"
-import { Entity } from 'mobx-query/entity/Entity'
-import { QueryFragmentMany } from 'mobx-query/queries/QueryFragmentMany'
-import { Label } from './label.entity'
+import { Entity } from "mobx-query/entity/Entity";
+import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
+import { Label } from "./label.entity";
 
 export class Document extends Entity<string, DocumentData> {
-  id: string = crypto.randomUUID()
-  @observable accessor title: string = ''
+  id: string = crypto.randomUUID();
+  @observable accessor title: string = "";
 
   // Fragment: labels belonging to this document
   readonly labelsQuery = new QueryFragmentMany({
     entity: Label,
-    queryKey: () => ['documentLabels', this.id],
-    queryFn: (_, { db }) => {
-      return db.query.label.findMany({
-        where: { documentId: this.id },
-      })
+    queryKey: () => ["documentLabels", this.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/documents/${this.id}/labels`);
+      return res.json();
     },
-  })
+  });
 
   hydrate(data: DocumentData) {
-    this.id = data.id
-    this.title = data.title
+    this.id = data.id;
+    this.title = data.title;
 
     // Seed the fragment from the parent query's joined data
     if (data.labels) {
-      this.labelsQuery.setQueryData(data.labels, undefined)
+      this.labelsQuery.setQueryData(data.labels);
     }
   }
 }
@@ -370,12 +368,13 @@ Here's the typical flow:
    ```ts
    const documentsQuery = new QueryMany({
      entity: Document,
-     queryKey: () => ['documents'],
-     queryFn: (_, { db }) =>
-       db.query.document.findMany({
-         with: { labels: true }, // include labels in the response
-       }),
-   })
+     queryKey: () => ["all"],
+     queryFn: async () => {
+       // Fetch documents with labels included in the response
+       const res = await fetch("/api/documents?include=labels");
+       return res.json();
+     },
+   });
    ```
 
 2. When each `Document` is hydrated, its `hydrate()` method calls `this.labelsQuery.setQueryData(data.labels)` — seeding the fragment cache from the parent response.
@@ -384,7 +383,7 @@ Here's the typical flow:
 
    ```tsx
    const DocumentLabels = observer(({ document }: { document: Document }) => {
-     const labels = document.labelsQuery.useQuery(undefined)
+     const labels = document.labelsQuery.useQuery();
 
      return (
        <div>
@@ -392,8 +391,8 @@ Here's the typical flow:
            <Badge key={label.id}>{label.displayTitle}</Badge>
          ))}
        </div>
-     )
-   })
+     );
+   });
    ```
 
    Since the fragment's cache was already seeded by `hydrate()` and has `staleTime: Infinity`, **no additional network request** is made. The labels are immediately available.
@@ -432,11 +431,11 @@ You can define queries in two places:
 export class FoldersStore {
   readonly foldersQuery = new QueryMany({
     entity: Folder,
-    queryKey: () => ['folders'],
+    queryKey: () => ["all"],
     queryFn: async (_, ctx) => {
       /* ... */
     },
-  })
+  });
 }
 ```
 
@@ -448,12 +447,12 @@ This is the right place for **collections** — queries that aren't scoped to a 
 export class Folder extends Entity<string, FolderData> {
   readonly documentsQuery = new QueryMany({
     entity: Document,
-    queryKey: () => ['folderDocuments', this.id],
-    queryFn: (_, ctx) =>
-      ctx.db.query.document.findMany({
-        where: { folderId: this.id },
-      }),
-  })
+    queryKey: () => ["folderDocuments", this.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/folders/${this.id}/documents`);
+      return res.json();
+    },
+  });
 }
 ```
 

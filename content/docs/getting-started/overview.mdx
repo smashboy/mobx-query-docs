@@ -38,13 +38,14 @@ With `QueryMany` and `QueryOne`, you define queries that look like standard TanS
 const foldersQuery = new QueryMany({
   entity: Folder,
   queryKey: () => ["folders"],
-  queryFn: async (_, ctx) => {
-    return ctx.db.query.folder.findMany();
+  queryFn: async () => {
+    const res = await fetch("/api/folders");
+    return res.json();
   },
 });
 
 // In a React component:
-const folders = foldersQuery.useSuspenseQuery(undefined);
+const folders = foldersQuery.useSuspenseQuery();
 // `folders` is Folder[] — each item is a fully observable MobX class instance
 ```
 
@@ -124,7 +125,7 @@ When a mutation (e.g. `CreateMutation`) fires:
 2. It's immediately added to the `EntityManager` collection (optimistic insert).
 3. An `OptimisticMutationStrategy` is created to handle success/error/rollback.
 4. The actual mutation function runs asynchronously.
-5. **On success:** the entity is confirmed, related queries are invalidated based on the configured strategy (`'all-queries'` or `'related-queries'`).
+5. **On success:** the entity is confirmed, related queries are invalidated based on the configured strategy (`'all-entity-queries'`, `'referenced-queries'`, etc.).
 6. **On error:** the strategy rolls back — for creates, the entity is removed from the collection; for updates, `entity.reset()` restores original values.
 
 ### MQClientAccessor

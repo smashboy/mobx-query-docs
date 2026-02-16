@@ -11,6 +11,7 @@ An **Entity** is a MobX-observable class that represents a single record from yo
 
 ```ts title="todo.entity.ts"
 import { Entity } from "mobx-query/entity/Entity";
+import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
 import { observable, action } from "mobx";
 
 interface TodoData {
@@ -31,8 +32,21 @@ export class Todo extends Entity<string, TodoData> {
     this.completed = data.completed;
   }
 
+  readonly updateMutation = new UpdateMutation({
+    entity: Todo,
+    instance: this,
+    mutationFn: async () => {
+      await fetch(`/api/todos/${this.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ completed: this.completed }),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
   @action toggleCompleted() {
     this.completed = !this.completed;
+    this.updateMutation.mutate();
   }
 }
 ```
@@ -41,6 +55,8 @@ export class Todo extends Entity<string, TodoData> {
   The `hydrate()` method is called whenever fresh data arrives from a query. It
   maps raw data fields onto your observable properties. The `Entity` base class
   handles identity, dirty tracking, and query hash management automatically.
+  Notice how `toggleCompleted()` modifies the local state and then calls
+  `updateMutation.mutate()` to sync the change with the server.
 </Callout>
 
 ## 2. Create a Store
@@ -68,14 +84,14 @@ export class TodosStore {
 
   readonly createTodo = new CreateMutation<CreateTodoInput, typeof Todo>({
     entity: Todo,
-    mutationFn: async (input, entity, ctx) => {
+    mutationFn: async (input, entity) => {
       await fetch("/api/todos", {
         method: "POST",
         body: JSON.stringify({ id: entity.id, ...input }),
         headers: { "Content-Type": "application/json" },
       });
     },
-    invalidationStrategy: "all-queries",
+    invalidationStrategy: "all-entity-queries",
   });
 }
 ```
@@ -149,7 +165,7 @@ import { useMQ } from "./mqclient";
 
 const TodoList = observer(() => {
   const { rootStore } = useMQ();
-  const todos = rootStore.todos.todosQuery.useSuspenseQuery(undefined);
+  const todos = rootStore.todos.todosQuery.useSuspenseQuery();
 
   return (
     <ul>
@@ -184,9 +200,10 @@ export function TodoApp() {
   **That's it!** You now have a fully reactive setup where: -
   `todosQuery.useSuspenseQuery()` fetches data and returns **hydrated MobX
   entity instances**. - Clicking a todo calls `toggleCompleted()` — a MobX
-  action — and the UI re-renders instantly via `observer()`. - If the same
-  `Todo` entity appears in other queries, it's the **same object instance**, so
-  changes are visible everywhere.
+  action that updates the local state **and** triggers `updateMutation.mutate()`
+  to sync with the server. - The UI re-renders instantly via `observer()` before
+  the server responds. - If the same `Todo` entity appears in other queries,
+  it's the **same object instance**, so changes are visible everywhere.
 </Callout>
 
 ## What's Next?
