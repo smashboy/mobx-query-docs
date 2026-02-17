@@ -7,12 +7,12 @@ Queries are how you fetch data from your server or database and receive it as **
 
 mobx-query provides four query classes:
 
-| Class               | Returns       | Suspense hook                   | Use case                                             |
-| ------------------- | ------------- | ------------------------------- | ---------------------------------------------------- |
-| `QueryMany`         | Entity array  | `useSuspenseQuery` / `useQuery` | Fetching a list of entities (e.g. all folders)       |
-| `QueryOne`          | Single entity | `useSuspenseQuery`              | Fetching a single entity by ID                       |
-| `QueryFragmentMany` | Entity array  | `useQuery`                      | Child/nested queries owned by a parent entity        |
-| `QueryFragmentOne`  | Single entity | `useQuery`                      | Child/nested single-entity queries owned by a parent |
+| Class               | Returns       | Suspense hooks                                       | Use case                                             |
+| ------------------- | ------------- | ---------------------------------------------------- | ---------------------------------------------------- |
+| `QueryMany`         | Entity array  | `useSuspenseQuery` / `useDeferredQuery` / `useQuery` | Fetching a list of entities (e.g. all folders)       |
+| `QueryOne`          | Single entity | `useSuspenseQuery` / `useDeferredQuery`              | Fetching a single entity by ID                       |
+| `QueryFragmentMany` | Entity array  | `useQuery`                                           | Child/nested queries owned by a parent entity        |
+| `QueryFragmentOne`  | Single entity | `useQuery`                                           | Child/nested single-entity queries owned by a parent |
 
 ## QueryMany
 
@@ -55,26 +55,18 @@ The options object has the following shape:
 Suspends the component until data is available. Returns a **guaranteed non-empty** entity array (no loading states to handle):
 
 ```tsx
-import { observer } from "mobx-react-lite";
-import { Suspense } from "react";
+const folders = foldersQuery.useSuspenseQuery();
+```
 
-const FolderList = observer(() => {
-  const { rootStore } = useMQ();
-  const folders = rootStore.folders.foldersQuery.useSuspenseQuery();
+#### `useDeferredQuery(args)`
 
-  return (
-    <ul>
-      {folders.map((folder) => (
-        <li key={folder.id}>{folder.displayTitle}</li>
-      ))}
-    </ul>
-  );
-});
+A variant of `useSuspenseQuery` that uses React's `useDeferredValue` internally. This is the **recommended hook for search or filter inputs**.
 
-// Wrap with Suspense boundary
-<Suspense fallback={<Loading />}>
-  <FolderList />
-</Suspense>;
+When `args` change, React will keep showing the previous results while fetching the new ones in the background, preventing the UI from "flashing" a loading state/spinner during active search.
+
+```tsx
+const search = useSearch(); // e.g. from TanStack Router
+const documents = folder.documentsQuery.useDeferredQuery(search);
 ```
 
 #### `useQuery(args, enabled?)`
@@ -139,22 +131,22 @@ export class FoldersStore {
 }
 ```
 
-### Using in React
+`QueryOne` provides two suspense-enabled hooks:
 
-`QueryOne` provides `useSuspenseQuery(args)` which returns a **single entity instance** (not an array):
+#### `useSuspenseQuery(args)`
+
+Returns a **single entity instance** and suspends if not loaded:
 
 ```tsx
-const FolderDetail = observer(({ folderId }: { folderId: string }) => {
-  const { rootStore } = useMQ();
-  const folder = rootStore.folders.folderByIdQuery.useSuspenseQuery(folderId);
+const folder = folderByIdQuery.useSuspenseQuery(folderId);
+```
 
-  return (
-    <div>
-      <h1>{folder.displayTitle}</h1>
-      <p>{folder.description}</p>
-    </div>
-  );
-});
+#### `useDeferredQuery(args)`
+
+Same as `QueryMany.useDeferredQuery()`. Uses `useDeferredValue` to keep the previous entity on screen while fetching a new one (useful for "Next/Previous" navigation or selection changes).
+
+```tsx
+const folder = folderByIdQuery.useDeferredQuery(selectedId);
 ```
 
 ## How Query Keys Work Under the Hood
