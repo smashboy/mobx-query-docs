@@ -1,0 +1,346 @@
+---
+title: Defining Queries
+description: How to define queries using QueryMany and QueryOne — options, hooks, arguments, and helper methods.
+---
+
+mobx-query provides two primary query classes for fetching data:
+
+| Class       | Returns       | Use case                                             |
+| ----------- | ------------- | ---------------------------------------------------- |
+| `QueryMany` | Entity array  | Fetching lists (all folders, recent documents, etc.) |
+| `QueryOne`  | Single entity | Fetching a single entity by ID or unique criteria    |
+
+Both share the same options interface, hooks pattern, and helper methods — they differ only in whether they return one entity or many.
+
+## QueryMany
+
+Use `QueryMany` to define queries that return **a list of entities**:
+
+```ts title="folders.store.ts"
+import { QueryMany } from 'mobx-query/queries/QueryMany'
+import { Folder, type FolderData } from './folder.entity'
+
+export class FoldersStore {
+  readonly foldersQuery = new QueryMany({
+    entity: Folder,
+    queryKey: () => ['all'],
+    queryFn: async () => {
+      const res = await fetch('/api/folders')
+      return res.json() as Promise<FolderData[]>
+    },
+  })
+}
+```
+
+## QueryOne
+
+Use `QueryOne` to fetch a **single entity** by its identifier:
+
+```ts title="folders.store.ts"
+import { QueryOne } from 'mobx-query/queries/QueryOne'
+import { Folder, type FolderData } from './folder.entity'
+
+export class FoldersStore {
+  readonly folderByIdQuery = new QueryOne({
+    entity: Folder,
+    queryKey: () => ['byId'],
+    queryFn: async (folderId: string) => {
+      const res = await fetch(`/api/folders/${folderId}`)
+      return res.json() as Promise<FolderData>
+    },
+  })
+}
+```
+
+## Options
+
+Both `QueryMany` and `QueryOne` accept the same core options:
+
+| Option        | Type                                                   | Required | Description                                                            |
+| ------------- | ------------------------------------------------------ | -------- | ---------------------------------------------------------------------- |
+| `entity`      | Entity constructor                                     | ✅       | The entity class this query hydrates (e.g. `Folder`)                   |
+| `queryKey`    | `() => unknown[]`                                      | ✅       | A function returning a static identifier array for this query          |
+| `queryFn`     | `(args, context) => TData \| Promise<TData>`           | ✅       | The data-fetching function                                             |
+| `staleTime`   | `number`                                               |          | Time in ms before data is considered stale                             |
+| `gcTime`      | `number`                                               |          | Time in ms before inactive query data is garbage collected             |
+| `enabled`     | `boolean \| ((meta, args) => boolean)`                 |          | Controls whether the query executes (for `useQuery` only)              |
+| `networkMode` | `NetworkMode`                                          |          | TanStack Query network mode (`'online'`, `'always'`, `'offlineFirst'`) |
+| `retry`       | `boolean \| number \| ((failureCount, error) => bool)` |          | Retry behavior for failed queries                                      |
+| `retryDelay`  | `number \| ((failureCount, error) => number)`          |          | Delay between retries in ms                                            |
+
+<Callout>
+  `queryFn` receives two arguments: **args** (the runtime arguments passed to
+  the hook) and **context** (your registered `MQClientContext` — including
+  `queryClient` and any custom dependencies you've registered). If your query
+  takes no arguments, the first parameter can be omitted.
+</Callout>
+
+### The `queryKey` Function
+
+The `queryKey` function should return a **static logical identifier** for the query. Arguments are appended automatically — you don't include them in the key.
+
+```ts
+// ✅ Correct — static key, args are appended automatically
+queryKey: () => ['folderDocuments']
+
+// ❌ Wrong — don't include dynamic values in queryKey
+queryKey: () => ['folderDocuments', this.folderId]
+```
+
+The only exception is when defining queries **on entity instances**, where you may include `this.id` to scope the query to a specific entity:
+
+```ts
+// ✅ On an entity — scoping to this instance
+queryKey: () => ['folderDocuments', this.id]
+```
+
+See [Where to Define Queries](#where-to-define-queries) below for more on this pattern.
+
+## Hooks
+
+### `useSuspenseQuery(args)`
+
+Available on: `QueryMany`, `QueryOne`
+
+Suspends the component until data is available. Returns a **guaranteed** result — no loading states to handle:
+
+```tsx
+// QueryMany — returns Folder[]
+const folders = foldersQuery.useSuspenseQuery()
+
+// QueryOne — returns Folder
+const folder = folderByIdQuery.useSuspenseQuery(folderId)
+```
+
+Use this inside a React `<Suspense>` boundary:
+
+```tsx
+<Suspense fallback={<Spinner />}>
+  <FolderList />
+</Suspense>
+```
+
+### `useDeferredQuery(args)`
+
+Available on: `QueryMany`, `QueryOne`
+
+A variant of `useSuspenseQuery` that wraps `args` with React's `useDeferredValue`. When `args` change, React keeps showing the previous results while fetching the new ones in the background — preventing the UI from flashing a loading state.
+
+**Best for:** search inputs, filter changes, navigation between items.
+
+```tsx
+const search = useSearch() // e.g. from a URL search param
+const documents = documentsQuery.useDeferredQuery(search)
+// Previous results stay visible while the new query loads
+```
+
+### `useQuery(args, meta)`
+
+Available on: `QueryMany`, `QueryOne`
+
+A non-suspense variant. Returns entities immediately (empty array / `null` until data loads). Supports the `enabled` option to conditionally skip the query.
+
+```tsx
+const FolderList = observer(() => {
+  const { rootStore } = useMQ()
+  const folders = rootStore.folders.foldersQuery.useQuery()
+
+  // `folders` is [] while loading, then populated
+  return (
+    <ul>
+      {folders.map((folder) => (
+        <li key={folder.id}>{folder.displayTitle}</li>
+      ))}
+    </ul>
+  )
+})
+```
+
+The second argument `meta` is passed to the `enabled` callback if one is defined:
+
+```ts
+readonly foldersQuery = new QueryMany<
+  void,
+  { isEnabled: boolean } | void,
+  typeof Folder
+>({
+  entity: Folder,
+  queryKey: () => ["preview"],
+  queryFn: async () => { /* ... */ },
+  enabled: (meta) => (!meta ? true : meta.isEnabled),
+});
+
+// Usage:
+const folders = foldersQuery.useQuery(undefined, { isEnabled: isVisible });
+```
+
+## Query Arguments
+
+The first type parameter of `QueryMany` / `QueryOne` defines the shape of the arguments passed to `queryFn` and all hooks:
+
+```ts
+// No arguments (default: void)
+readonly foldersQuery = new QueryMany({
+  entity: Folder,
+  queryKey: () => ["all"],
+  queryFn: async () => { /* ... */ },
+});
+foldersQuery.useSuspenseQuery(); // no args needed
+
+// With arguments
+readonly folderByIdQuery = new QueryOne({
+  entity: Folder,
+  queryKey: () => ["byId"],
+  queryFn: async (folderId: string) => { /* ... */ },
+});
+folderByIdQuery.useSuspenseQuery("folder-123"); // typed as string
+```
+
+Arguments are automatically appended to the query key (see [How It Works](/queries/how-it-works)), so different arguments produce different cache entries.
+
+## Helper Methods
+
+All query classes provide methods for working with the cache outside of React hooks.
+
+### `prefetch(args)`
+
+Pre-fetches data and populates the cache **before** a component renders. Useful for route loaders or hover prefetching:
+
+```ts
+// In a route loader
+await foldersQuery.prefetch();
+
+// On hover
+onMouseEnter={() => folderByIdQuery.prefetch(folderId)}
+```
+
+### `ensureData(args)`
+
+Similar to `prefetch`, but only fetches if the cache is empty. Returns the cached data if it exists:
+
+```ts
+const entityIds = await foldersQuery.ensureData()
+```
+
+### `invalidate(args)`
+
+Manually invalidates a specific query cache entry. If the query is currently active (mounted in a component), it immediately refetches:
+
+```ts
+foldersQuery.invalidate()
+folderByIdQuery.invalidate('folder-123')
+```
+
+<Callout type="info">
+  `invalidate()` computes the query hash from the args and targets the exact
+  cache entry. If the query has been garbage collected, the invalidation is
+  silently ignored.
+</Callout>
+
+### `setQueryData(data, args)`
+
+Manually injects data into the query cache **without fetching**. The data is hydrated through the normal entity collection pipeline:
+
+```ts
+// Seed a list query with existing data
+foldersQuery.setQueryData(serverFolders)
+
+// Seed a single entity query
+folderByIdQuery.setQueryData(folderRecord, 'folder-123')
+```
+
+Useful for:
+
+- Hydrating the cache with data from a parent query (avoiding redundant fetches)
+- Server-side rendering / initial data
+- Optimistic updates in custom mutation handlers
+
+### `getQueryIds(args)` <small>(QueryMany only)</small>
+
+Returns the current array of entity IDs stored in the cache:
+
+```ts
+const ids = foldersQuery.getQueryIds()
+// => ["id-1", "id-2", "id-3"]
+```
+
+### `setQueryIds(ids, args)` <small>(QueryMany only)</small>
+
+Directly sets the entity ID array in the cache. Used for optimistic updates where you need to manipulate the query result directly:
+
+```ts
+foldersQuery.setQueryIds(['id-1', 'id-2', 'id-4'])
+```
+
+### `getQueryKey(args)` <small>(QueryMany only)</small>
+
+Returns the full constructed query key. Useful when integrating directly with TanStack Query:
+
+```ts
+const queryKey = foldersQuery.getQueryKey()
+// => ["Folder", "__query__many__", "all"]
+```
+
+### `useIsFetching(args)`
+
+A React hook that returns `true` when the query is currently fetching (initial or background refetch):
+
+```tsx
+const isFetching = foldersQuery.useIsFetching()
+```
+
+## Where to Define Queries
+
+Queries can be defined in two places, each serving a different purpose.
+
+### In a Store — Top-Level Queries
+
+Define queries in a store when they represent **top-level collections** or global data:
+
+```ts
+export class FoldersStore {
+  readonly foldersQuery = new QueryMany({
+    entity: Folder,
+    queryKey: () => ['all'],
+    queryFn: async () => {
+      /* fetch all folders */
+    },
+  })
+
+  readonly folderByIdQuery = new QueryOne({
+    entity: Folder,
+    queryKey: () => ['byId'],
+    queryFn: async (folderId: string) => {
+      /* fetch one folder */
+    },
+  })
+}
+```
+
+### On an Entity — Instance-Scoped Queries
+
+Define queries on an entity when the data is **scoped to a specific entity instance**. Use `this.id` in the `queryKey` to create per-instance cache entries:
+
+```ts
+export class Folder extends Entity<FolderData> {
+  id: string = crypto.randomUUID()
+
+  // Each Folder instance gets its own distinct query:
+  // ["Document", "__query__many__", "folderDocuments", "folder-1"]
+  // ["Document", "__query__many__", "folderDocuments", "folder-2"]
+  readonly documentsQuery = new QueryMany({
+    entity: Document,
+    queryKey: () => ['folderDocuments', this.id],
+    queryFn: async (filter: FilterOptions) => {
+      const res = await fetch(`/api/folders/${this.id}/documents`)
+      return res.json()
+    },
+  })
+}
+```
+
+<Callout type="info">
+  When a query is defined on an entity, it naturally becomes **instance-scoped**
+  — each entity gets its own cache entry. The query is co-located with the data
+  it relates to, keeping your code organized and discoverable.
+</Callout>

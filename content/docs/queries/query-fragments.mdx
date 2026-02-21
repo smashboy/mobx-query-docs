@@ -1,0 +1,224 @@
+---
+title: Query Fragments
+description: Use Query Fragments for child/nested data owned by a parent entity — with infinite cache lifetime and parent-controlled hydration.
+---
+
+Query Fragments (`QueryFragmentMany` and `QueryFragmentOne`) are a specialized query variant designed for **child data that belongs to a parent entity**. They represent data that is conceptually part of an entity's shape but may be loaded separately or nested within a parent query's response.
+
+## The Problem They Solve
+
+Consider a `Document` entity that has many `Label` entities. You could define a global labels-for-document query in a store:
+
+```ts
+// ❌ This works, but it's not ideal
+export class LabelsStore {
+  readonly labelsByDocumentQuery = new QueryMany({
+    entity: Label,
+    queryKey: () => ['labelsByDocument'],
+    queryFn: async (documentId: string) => {
+      const res = await fetch(`/api/documents/${documentId}/labels`)
+      return res.json()
+    },
+  })
+}
+```
+
+This has two problems:
+
+1. **Labels belong to a document** — they're not a top-level collection. Co-locating them with the entity they belong to makes the code more discoverable.
+
+2. **The parent query already has the data.** If your document query includes labels in its response (via a join or `include`), you're either ignoring that data or making a redundant fetch.
+
+Query Fragments solve both problems.
+
+## How Fragments Differ from Regular Queries
+
+| Behavior                | `QueryMany` / `QueryOne`                           | `QueryFragmentMany` / `QueryFragmentOne`                            |
+| ----------------------- | -------------------------------------------------- | ------------------------------------------------------------------- |
+| **Cache lifetime**      | Controlled by `staleTime` / `gcTime`               | Infinite `staleTime` and `gcTime` — cache never expires on its own  |
+| **React hooks**         | `useSuspenseQuery`, `useDeferredQuery`, `useQuery` | `useQuery` only (no suspense)                                       |
+| **Typical location**    | Declared in a store                                | Declared on an entity instance                                      |
+| **Primary data source** | Independent fetch via `queryFn`                    | Seeded from parent via `setQueryData`, with optional fallback fetch |
+
+The key difference: fragments have `staleTime: Infinity` and `gcTime: Infinity`. Once data is seeded (usually by the parent entity's `hydrate()`), the fragment won't refetch on its own. The **parent entity controls the lifecycle**.
+
+## Defining a Fragment
+
+Fragments are typically declared as `readonly` properties on an entity:
+
+```ts title="document.entity.ts"
+import { Entity } from 'mobx-query/entity/Entity'
+import { QueryFragmentMany } from 'mobx-query/queries/QueryFragmentMany'
+import { Label } from './label.entity'
+
+interface DocumentData {
+  id: string
+  title: string
+  labels?: LabelData[]
+}
+
+export class Document extends Entity<DocumentData> {
+  id: string = crypto.randomUUID()
+  @observable accessor title: string = ''
+
+  // Fragment: labels belonging to this document
+  readonly labelsQuery = new QueryFragmentMany({
+    entity: Label,
+    queryKey: () => ['documentLabels', this.id],
+  })
+
+  hydrate(data: DocumentData) {
+    this.id = data.id
+    this.title = data.title
+
+    // Seed the fragment from the parent query's joined data
+    if (data.labels) {
+      this.labelsQuery.setQueryData(data.labels)
+    }
+  }
+}
+```
+
+Notice that `queryFn` is **optional** on fragments. If the parent always provides the data via `setQueryData`, you don't need a fallback fetch function at all.
+
+### With a Fallback Fetch
+
+If the fragment data might not always be available from the parent, provide a `queryFn` as a fallback:
+
+```ts
+readonly labelsQuery = new QueryFragmentMany({
+  entity: Label,
+  queryKey: () => ["documentLabels", this.id],
+  queryFn: async () => {
+    // Only called if setQueryData was never called
+    const res = await fetch(`/api/documents/${this.id}/labels`);
+    return res.json();
+  },
+});
+```
+
+### `QueryFragmentOne`
+
+For one-to-one relationships, use `QueryFragmentOne`:
+
+```ts
+readonly authorQuery = new QueryFragmentOne({
+  entity: User,
+  queryKey: () => ["documentAuthor", this.id],
+});
+
+hydrate(data: DocumentData) {
+  // ...
+  if (data.author) {
+    this.authorQuery.setQueryData(data.author);
+  }
+}
+```
+
+## The Fragment Pattern in Practice
+
+Here's the complete flow:
+
+**1. A parent query fetches documents with labels included:**
+
+```ts title="documents.store.ts"
+readonly documentsQuery = new QueryMany({
+  entity: Document,
+  queryKey: () => ["all"],
+  queryFn: async () => {
+    // The API returns documents with labels joined
+    const res = await fetch("/api/documents?include=labels");
+    return res.json();
+    // Response shape: [{ id, title, labels: [...] }, ...]
+  },
+});
+```
+
+**2. When each `Document` is hydrated, `hydrate()` calls `setQueryData` to seed the fragment:**
+
+```ts
+hydrate(data: DocumentData) {
+  this.id = data.id;
+  this.title = data.title;
+
+  // Seed the fragment — no additional network request
+  if (data.labels) {
+    this.labelsQuery.setQueryData(data.labels);
+  }
+}
+```
+
+**3. A component renders the labels using the fragment's `useQuery` hook:**
+
+```tsx title="DocumentLabels.tsx"
+import { observer } from 'mobx-react-lite'
+import type { Document } from './document.entity'
+
+const DocumentLabels = observer(({ document }: { document: Document }) => {
+  const labels = document.labelsQuery.useQuery()
+
+  return (
+    <div>
+      {labels.map((label) => (
+        <Badge key={label.id}>{label.name}</Badge>
+      ))}
+    </div>
+  )
+})
+```
+
+Since the fragment's cache was already seeded by `hydrate()` and has `staleTime: Infinity`, **no additional network request is made**. The labels are immediately available.
+
+**4. If the parent query is refetched** (e.g. via invalidation), `hydrate()` is called again on the existing document, which calls `setQueryData` again — keeping the fragment's data fresh.
+
+## When to Use Fragments vs Regular Queries
+
+### Use Query Fragments when:
+
+- The data has a **parent-child relationship** with a specific entity (one-to-many, one-to-one)
+- The parent query **can pre-populate** the data via joins or includes
+- You want the fragment's cache lifetime to be **controlled by its parent**
+- You don't need Suspense support for this particular data
+
+### Use Regular Queries when:
+
+- The data is a **top-level collection** (e.g. "all folders", "user settings")
+- You want TanStack Query's standard `staleTime` / `gcTime` behavior to manage refetching
+- You need **Suspense** support
+- The data is **not scoped to a specific entity instance**
+
+<Callout type="info">
+  A useful mental model: **Queries** are for data you fetch from the "outside"
+  (defined in stores), while **Fragments** are for data that is a natural part
+  of an entity's shape but loaded separately or nested within a parent response
+  (defined on entities).
+</Callout>
+
+## Fragments vs Entity-Scoped Regular Queries
+
+You might wonder: "Can I just define a regular `QueryMany` on an entity instead of using a fragment?" Yes — and sometimes it's the right choice.
+
+```ts
+// Regular query on an entity — standard staleTime/gcTime behavior
+readonly documentsQuery = new QueryMany({
+  entity: Document,
+  queryKey: () => ["folderDocuments", this.id],
+  queryFn: async (filter: FilterOptions) => { /* ... */ },
+});
+
+// Fragment on an entity — infinite cache, seeded from parent
+readonly labelsQuery = new QueryFragmentMany({
+  entity: Label,
+  queryKey: () => ["documentLabels", this.id],
+});
+```
+
+Choose between them based on who controls the data's freshness:
+
+| Criterion                | Entity-scoped `QueryMany`       | `QueryFragmentMany`                        |
+| ------------------------ | ------------------------------- | ------------------------------------------ |
+| Cache controlled by      | TanStack Query (stale/gc)       | Parent entity's `hydrate()`                |
+| Refetches independently? | Yes, when stale                 | No, only when parent refetches             |
+| Has its own `queryFn`?   | Always (required)               | Optional — can be seeded only              |
+| Suspense support?        | Yes                             | No (uses `useQuery` only)                  |
+| Best for                 | Data that changes independently | Data that's always fetched with its parent |

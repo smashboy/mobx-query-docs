@@ -1,0 +1,141 @@
+---
+title: How It Works
+description: Understanding how mobx-query queries work under the hood — from query key construction to entity normalization.
+---
+
+This page explains the internals of how queries work in mobx-query. Understanding these mechanics isn't required to use the library, but it helps when debugging or building advanced patterns.
+
+## Query Key Construction
+
+When you define a query, you provide a `queryKey` function that returns your logical identifier. Under the hood, mobx-query **wraps** this with additional prefixes to enable entity-based cache management.
+
+Every query's full TanStack Query key is composed of:
+
+```
+[ EntityName, QueryPrefix, ...yourQueryKey(), args ]
+```
+
+For example, given this query:
+
+```ts
+const foldersQuery = new QueryMany({
+  entity: Folder,
+  queryKey: () => ['recent'],
+  queryFn: async (limit: number) => {
+    /* ... */
+  },
+})
+```
+
+When called with `foldersQuery.useSuspenseQuery(5)`, the actual TanStack Query key becomes:
+
+```ts
+;['Folder', '__query__many__', 'recent', 5]
+```
+
+| Segment             | Source                   | Purpose                                                              |
+| ------------------- | ------------------------ | -------------------------------------------------------------------- |
+| `"Folder"`          | Entity constructor name  | Groups all queries for this entity type — used for bulk invalidation |
+| `"__query__many__"` | Internal query prefix    | Distinguishes between `QueryMany`, `QueryOne`, and fragment variants |
+| `"recent"`          | Your `queryKey()` result | Your custom logical identifier                                       |
+| `5`                 | `args`                   | The runtime arguments passed to the hook                             |
+
+Each query class uses a unique prefix:
+
+| Class               | Prefix                      |
+| ------------------- | --------------------------- |
+| `QueryMany`         | `__query__many__`           |
+| `QueryOne`          | `__query__one__`            |
+| `QueryFragmentMany` | `__query__fragment__many__` |
+| `QueryFragmentOne`  | `__query__fragment__one__`  |
+
+### Why This Matters
+
+The entity name prefix enables powerful features:
+
+1. **Bulk invalidation** — After a `CreateMutation` with `invalidationStrategy: 'all-entity-queries'`, mobx-query can call `queryClient.invalidateQueries({ queryKey: ['Folder'] })` to invalidate _every_ query related to the `Folder` entity — regardless of which store or entity instance defined it.
+
+2. **Query hash tracking** — Each entity instance stores a `queryHashes` set linking it to the TanStack Query cache entries that reference it. When a cache entry is garbage collected, mobx-query removes the hash from all entities and cleans up orphaned entities automatically.
+
+3. **Hash-based invalidation** — The `invalidate(args)` method computes the query hash using TanStack Query's `hashKey()` and directly targets the exact cache entry — no query key matching needed.
+
+## What Gets Stored in the Cache
+
+A crucial architecture detail: mobx-query does **not** store raw data in TanStack Query's cache. Instead, it stores **entity IDs** (or a single ID for `QueryOne`):
+
+```
+TanStack Query cache:
+
+  QueryMany entry:
+    key:  ["Folder", "__query__many__", "all"]
+    data: ["id-1", "id-2", "id-3"]        ← entity ID array
+
+  QueryOne entry:
+    key:  ["Folder", "__query__one__", "byId", "id-1"]
+    data: "id-1"                           ← single entity ID
+```
+
+When a hook reads from the cache, the ID array (or single ID) is resolved to live entity instances from the entity collection. This is the mechanism that enables normalized, deduplicated entity sharing across queries.
+
+## The Query Flow
+
+Here's what happens when you call `query.useSuspenseQuery(args)`:
+
+1. A **query key** is constructed: `[EntityName, QueryPrefix, ...queryKey(), args]`
+2. The **query function** runs, fetching raw data from your backend/database
+3. The raw data is passed to the **entity collection**, which for each record:
+   - Checks if an entity with that ID already exists → calls `hydrate()` on the existing instance (preserving referential identity)
+   - If new → creates a new entity instance, calls `hydrate()`, and stores it in the collection
+4. An array of **entity IDs** is returned and stored in TanStack Query's cache
+5. The IDs are resolved to entity instances from the collection and returned to your component
+
+On subsequent renders (cache hit), steps 2–3 are skipped — the cached ID array is resolved directly to the already-existing entity instances.
+
+```
+                   ┌──────────────────────────┐
+                   │      React Component     │
+                   │  useSuspenseQuery(args)  │
+                   └────────────┬─────────────┘
+                                │
+                   ┌────────────▼─────────────┐
+                   │     TanStack Query       │
+                   │  key: [Entity, prefix,   │
+                   │        ...queryKey, args] │
+                   └────────────┬─────────────┘
+                                │
+                  cache miss?   │   cache hit?
+              ┌─────────────────┤──────────────┐
+              │                 │              │
+   ┌──────────▼──────────┐     │   ┌──────────▼──────────┐
+   │      queryFn()      │     │   │   Return cached IDs │
+   │  → fetch raw data   │     │   └──────────┬──────────┘
+   └──────────┬──────────┘     │              │
+              │                │              │
+   ┌──────────▼──────────┐     │   ┌──────────▼──────────┐
+   │  Entity Collection  │     │   │  Entity Collection  │
+   │  hydrate / create   │     │   │  resolve IDs →      │
+   │  → return IDs       │     │   │  entity instances   │
+   └──────────┬──────────┘     │   └──────────┬──────────┘
+              │                │              │
+              └────────────────┤──────────────┘
+                               │
+                  ┌────────────▼─────────────┐
+                  │    Entity instances       │
+                  │    returned to component  │
+                  └──────────────────────────┘
+```
+
+## Entity Lifecycle & Garbage Collection
+
+Entity instances are kept alive as long as at least one TanStack Query cache entry references them. When a cache entry is garbage collected (based on `gcTime`), mobx-query:
+
+1. Removes the corresponding query hash from all entities that were part of that query
+2. If an entity's `queryHashes` set becomes empty (no remaining cache entries reference it), the entity is removed from the collection
+
+This means you never need to manually clean up entities — their lifecycle is tied directly to the TanStack Query cache.
+
+<Callout>
+  Client-only entities (created via `CreateMutation` but not yet confirmed by a
+  query) are tracked separately and are not subject to hash-based garbage
+  collection.
+</Callout>

@@ -20,7 +20,7 @@ interface TodoData {
   completed: boolean;
 }
 
-export class Todo extends Entity<string, TodoData> {
+export class Todo extends Entity<TodoData> {
   id: string = crypto.randomUUID();
 
   @observable accessor title: string = "";
@@ -38,7 +38,7 @@ export class Todo extends Entity<string, TodoData> {
     mutationFn: async () => {
       await fetch(`/api/todos/${this.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ completed: this.completed }),
+        body: JSON.stringify({ title: this.title, completed: this.completed }),
         headers: { "Content-Type": "application/json" },
       });
     },
@@ -55,22 +55,22 @@ export class Todo extends Entity<string, TodoData> {
   The `hydrate()` method is called whenever fresh data arrives from a query. It
   maps raw data fields onto your observable properties. The `Entity` base class
   handles identity, dirty tracking, and query hash management automatically.
-  Notice how `toggleCompleted()` modifies the local state and then calls
-  `updateMutation.mutate()` to sync the change with the server.
 </Callout>
+
+A few things to note:
+
+- **`@observable accessor`** uses TC39 decorators (not legacy). See [Installation](/installation#decorators) for TypeScript config.
+- **`updateMutation.mutate()`** is an imperative call — it checks `isDirty` internally and skips the request if nothing has changed.
+- **`id`** defaults to a UUID so optimistic creates work before the server responds.
 
 ## 2. Create a Store
 
-A **Store** groups related queries and mutations. Define your queries using `QueryMany` (for lists) or `QueryOne` (for single records):
+A **Store** groups related queries and mutations for a specific domain. Define your queries using `QueryMany` (for lists) or `QueryOne` (for single records):
 
 ```ts title="todos.store.ts"
 import { QueryMany } from "mobx-query/queries/QueryMany";
 import { CreateMutation } from "mobx-query/mutations/CreateMutation";
-import { Todo } from "./todo.entity";
-
-interface CreateTodoInput {
-  title: string;
-}
+import { Todo, type TodoData } from "./todo.entity";
 
 export class TodosStore {
   readonly todosQuery = new QueryMany({
@@ -78,27 +78,33 @@ export class TodosStore {
     queryKey: () => ["todos"],
     queryFn: async () => {
       const res = await fetch("/api/todos");
-      return res.json();
+      return res.json() as Promise<TodoData[]>;
     },
   });
 
-  readonly createTodo = new CreateMutation<CreateTodoInput, typeof Todo>({
+  readonly createTodo = new CreateMutation({
     entity: Todo,
-    mutationFn: async (input, entity) => {
+    mutationFn: async (input: { title: string }, entity) => {
       await fetch("/api/todos", {
         method: "POST",
         body: JSON.stringify({ id: entity.id, ...input }),
         headers: { "Content-Type": "application/json" },
       });
     },
-    invalidationStrategy: "all-entity-queries",
   });
 }
 ```
 
+<Callout>
+  `CreateMutation.mutationFn` receives the **input** you pass when calling the
+  mutation and the **entity instance** that was optimistically created. Use
+  `entity.id` to send the client-generated ID to the server so both sides stay
+  in sync.
+</Callout>
+
 ## 3. Initialize the Client
 
-Create an `MQClient` instance — this is the root of your mobx-query setup. It registers your entity classes, creates the root store, and connects everything to TanStack Query:
+Create an `MQClient` instance — the root of your mobx-query setup. It registers your entity classes, creates the root store, and connects everything to TanStack Query:
 
 ```ts title="mqclient.ts"
 import { QueryClient } from "@tanstack/react-query";
@@ -107,12 +113,10 @@ import { createReactContext } from "mobx-query/react/createReactContext";
 import { Todo } from "./todo.entity";
 import { TodosStore } from "./todos.store";
 
-// 1. Define your root store shape
 class RootStore {
   todos = new TodosStore();
 }
 
-// 2. Initialize the client
 export function initMQClient(queryClient: QueryClient) {
   return new MQClient<RootStore>({
     context: { queryClient },
@@ -121,15 +125,15 @@ export function initMQClient(queryClient: QueryClient) {
   });
 }
 
-// 3. Create React context helpers
+// Create typed React context helpers
 export const { Provider: MQProvider, useContext: useMQ } =
   createReactContext<MQClient<RootStore>>();
 ```
 
 <Callout type="warn">
   Every entity class your app uses **must** be registered in the `entities`
-  array. This is how mobx-query creates the internal `EntityManager` instances
-  that handle normalization.
+  array. This is how mobx-query creates the internal entity collections that
+  handle normalization and deduplication.
 </Callout>
 
 ## 4. Set Up the Provider
@@ -156,23 +160,43 @@ export default function App() {
 
 ## 5. Build a Reactive Component
 
-Now you can use your store's queries and mutations in React components. Wrap components with `observer` from `mobx-react-lite` to make them react to MobX observable changes:
+Use your store's queries and mutations in React components. Wrap components with `observer` from `mobx-react-lite` to make them react to MobX observable changes:
 
 ```tsx title="TodoApp.tsx"
 import { observer } from "mobx-react-lite";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useMQ } from "./mqclient";
+import type { Todo } from "./todo.entity";
 
 const TodoList = observer(() => {
   const { rootStore } = useMQ();
   const todos = rootStore.todos.todosQuery.useSuspenseQuery();
+  const createTodo = rootStore.todos.createTodo.useMutation();
+
+  const [title, setTitle] = useState("");
+
+  const handleCreate = () => {
+    if (!title.trim()) return;
+    createTodo({ title });
+    setTitle("");
+  };
 
   return (
-    <ul>
-      {todos.map((todo) => (
-        <TodoItem key={todo.id} todo={todo} />
-      ))}
-    </ul>
+    <div>
+      <div>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="What needs to be done?"
+        />
+        <button onClick={handleCreate}>Add</button>
+      </div>
+      <ul>
+        {todos.map((todo) => (
+          <TodoItem key={todo.id} todo={todo} />
+        ))}
+      </ul>
+    </div>
   );
 });
 
@@ -196,22 +220,21 @@ export function TodoApp() {
 }
 ```
 
-<Callout type="success">
-  **That's it!** You now have a fully reactive setup where: -
-  `todosQuery.useSuspenseQuery()` fetches data and returns **hydrated MobX
-  entity instances**. - Clicking a todo calls `toggleCompleted()` — a MobX
-  action that updates the local state **and** triggers `updateMutation.mutate()`
-  to sync with the server. - The UI re-renders instantly via `observer()` before
-  the server responds. - If the same `Todo` entity appears in other queries,
-  it's the **same object instance**, so changes are visible everywhere.
+<Callout type="info">
+  **That's it!** Here's what's happening under the hood:
+
+- `todosQuery.useSuspenseQuery()` fetches data and returns **hydrated MobX entity instances** — not raw JSON.
+- `createTodo.useMutation()` returns a function that optimistically adds a new `Todo` to the collection before the server responds.
+- Clicking a todo calls `toggleCompleted()` — a MobX action that updates local state **and** triggers `updateMutation.mutate()` to sync with the server.
+- The UI re-renders instantly via `observer()` — before the server responds.
+- If the same `Todo` entity appears in other queries, it's the **same object instance** — changes are visible everywhere.
+
 </Callout>
 
 ## What's Next?
 
-Now that you have a working setup, explore the rest of the documentation to learn about:
+Now that you have a working setup, explore the Guides to learn about:
 
-- **UpdateMutation & DeleteMutation** — optimistic updates with automatic rollback
-- **QueryOne** — fetching single entities by ID
-- **Dirty Tracking** — detecting local changes and resetting entities
-- **Custom Context** — registering app-wide context (database clients, auth tokens)
-- **Filters** — declarative filtering and sorting for entity queries
+- **[Defining Entities](/defining-entities)** — entity lifecycle, hydrate patterns, and computed properties
+- **[Queries](/queries)** — `QueryOne`, `QueryFragment`, prefetching, and cache management
+- **[Mutations](/mutations)** — `UpdateMutation`, `DeleteMutation`, optimistic strategies, and rollback

@@ -145,6 +145,64 @@ All query and mutation function signatures use `MQClientContextRegistered` as th
   clients, API wrappers, feature flags, auth services, etc.
 </Callout>
 
+## Direct Entity Collection Access
+
+While queries are the recommended way to fetch and track data, sometimes you need to access the entire local pool of entities for a specific type — for example, to build global navigation, search across all loaded data, or debug state.
+
+Every `MQClient` maintains an `EntityCollection` for each registered entity type. You can access it via `client.getEntityCollection(EntityClass)`.
+
+### Lifecycle and Reactivity
+
+Entity collections are **fully observable**. They update automatically whenever queries hydrate fresh data or mutations change entity state.
+
+```tsx title="LabelSidebarGroup.tsx"
+import { observer } from "mobx-react-lite";
+import { useMQ } from "./mqclient";
+import { Label } from "../label.entity";
+
+export const LabelSidebarGroup = observer(() => {
+  const client = useMQ();
+  // Get the local collection for labels
+  const labels = client.getEntityCollection(Label);
+
+  // Still use a query to ensure data is fetched/cached
+  client.rootStore.labels.labelsQuery.useSuspenseQuery();
+
+  return (
+    <ul>
+      {labels
+        .filter((_, index) => index < 5)
+        .map((label) => (
+          <li key={label.id}>{label.name}</li>
+        ))}
+    </ul>
+  );
+});
+```
+
+### Collection Methods
+
+The `EntityCollection` provides several utility methods that behave like their native `Array` counterparts but are optimized for MobX and respect the internal `deletedRecordIds` state (entities hidden via `DeleteMutation` are automatically excluded).
+
+| Method               | Description                                                                     |
+| :------------------- | :------------------------------------------------------------------------------ |
+| `size`               | (Computed) The number of active entities in the collection.                     |
+| `entities`           | (Computed) Returns all active entities as a plain array.                        |
+| `clientOnlyEntities` | (Computed) Returns only entities created locally (not yet confirmed by server). |
+| `getEntityById(id)`  | Returns a specific entity by its identifier.                                    |
+| `filter(predicate)`  | Returns a filtered array of entities.                                           |
+| `map(callback)`      | Returns an **observable array** of transformed data.                            |
+| `find(predicate)`    | Returns the first entity matching the criteria.                                 |
+| `some(predicate)`    | Returns `true` if any entity matches the criteria.                              |
+| `every(predicate)`   | Returns `true` if all entities match the criteria.                              |
+
+<Callout type="warn">
+  Direct collection access bypasses TanStack Query's loading/error states. Use
+  `getEntityCollection` in combination with a query hook (as shown in the
+  example above) to ensure the data is actually present and to handle loading
+  boundaries.
+</Callout>
+
 ## Reusable Queries and Mutations
 
 As your application grows, you'll notice patterns repeating across entities. Every entity needs an update mutation, a delete mutation, perhaps a "by ID" query. Instead of writing the same boilerplate for each entity, you can create **reusable factories** that generate queries and mutations from minimal configuration.
@@ -282,7 +340,7 @@ import {
   createDeleteMutation,
 } from "./mutation-factories";
 
-export class Folder extends Entity<string, FolderData> {
+export class Folder extends Entity<FolderData> {
   id: string = crypto.randomUUID();
 
   @observable accessor name: string = "";
@@ -318,9 +376,9 @@ import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
  * Subclasses must implement `getEndpoint()` and `getUpdateBody()`.
  */
 export abstract class CrudEntity<
-  TId extends string | number,
   TData,
-> extends Entity<TId, TData> {
+  TId extends string | number = string,
+> extends Entity<TData, TId> {
   /** The REST API endpoint for this entity type (e.g. 'folders') */
   protected abstract getEndpoint(): string;
 
@@ -354,7 +412,7 @@ export abstract class CrudEntity<
 Then your entities become concise:
 
 ```ts title="folder.entity.ts"
-export class Folder extends CrudEntity<string, FolderData> {
+export class Folder extends CrudEntity<FolderData> {
   id: string = crypto.randomUUID();
 
   @observable accessor name: string = "";

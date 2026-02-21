@@ -25,7 +25,7 @@ interface FolderData {
   isPinned: boolean;
 }
 
-export class Folder extends Entity<string, FolderData> {
+export class Folder extends Entity<FolderData> {
   id: string = crypto.randomUUID();
 
   @observable accessor name: string = "";
@@ -44,20 +44,20 @@ export class Folder extends Entity<string, FolderData> {
 The `Entity` base class is generic and accepts two type parameters:
 
 ```ts
-Entity<TEntityId, TData>;
+Entity<TData, TEntityId = string>;
 ```
 
 | Parameter   | Description                                                                                                                                |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `TEntityId` | The type of the entity's `id` field. Must be `string` or `number`.                                                                         |
 | `TData`     | The shape of the raw data passed to `hydrate()`. Can be a union type if you need to handle different data shapes (e.g. create vs. select). |
+| `TEntityId` | The type of the entity's `id` field. Must be `string` or `number`. Defaults to `string`.                                                   |
 
 ## The `id` Field
 
 Every entity **must** have an `id` property. This is how mobx-query identifies and deduplicates entities across queries. When two queries return data with the same `id`, mobx-query will hydrate the **same entity instance** rather than creating duplicates.
 
 ```ts
-export class Folder extends Entity<string, FolderData> {
+export class Folder extends Entity<FolderData> {
   id: string = crypto.randomUUID();
   // ...
 }
@@ -125,7 +125,7 @@ interface DocumentLabelData {
   labelId: string;
 }
 
-export class DocumentLabel extends Entity<string, DocumentLabelData> {
+export class DocumentLabel extends Entity<DocumentLabelData> {
   id: string = "";
   documentId: string = "";
   labelId: string = "";
@@ -148,7 +148,7 @@ export class DocumentLabel extends Entity<string, DocumentLabelData> {
 You can also create a static helper method on the entity for consistency:
 
 ```ts
-export class DocumentLabel extends Entity<string, DocumentLabelData> {
+export class DocumentLabel extends Entity<DocumentLabelData> {
   // ...
 
   static createId(documentId: string, labelId: string) {
@@ -202,10 +202,7 @@ interface CreateFolderData {
   isPinned: boolean;
 }
 
-export class Folder extends Entity<
-  string,
-  SelectFolderData | CreateFolderData
-> {
+export class Folder extends Entity<SelectFolderData | CreateFolderData> {
   id: string = crypto.randomUUID();
 
   createdAt: Date = new Date();
@@ -247,7 +244,7 @@ If your query returns nested data (e.g. a document with its labels), you can hyd
 import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
 import { Label } from "./label.entity";
 
-export class Document extends Entity<string, DocumentData> {
+export class Document extends Entity<DocumentData> {
   id: string = crypto.randomUUID();
   @observable accessor title: string = "";
 
@@ -448,7 +445,7 @@ Use `@computed get` for derived values that depend on observable properties:
 ```ts
 import { computed, observable } from "mobx";
 
-export class Folder extends Entity<string, FolderData> {
+export class Folder extends Entity<FolderData> {
   @observable accessor name: string = "";
 
   @computed get displayTitle() {
@@ -470,10 +467,7 @@ import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
 import { QueryMany } from "mobx-query/queries/QueryMany";
 import { action, computed, observable } from "mobx";
 
-export class Folder extends Entity<
-  string,
-  SelectFolderData | CreateFolderData
-> {
+export class Folder extends Entity<SelectFolderData | CreateFolderData> {
   // Immutable identity — generated client-side for optimistic creates
   id: string = crypto.randomUUID();
 

@@ -51,6 +51,7 @@ export class FoldersStore {
       });
     },
     invalidationStrategy: "all-entity-queries",
+    invalidateOnError: true,
   });
 }
 ```
@@ -62,6 +63,7 @@ The options object:
 | `entity`               | Entity constructor                          | The entity class to create (e.g. `Folder`)                                                                        |
 | `mutationFn`           | `(input, entity, context) => Promise<void>` | The server-side write function. Receives the raw input, the hydrated entity instance, and your registered context |
 | `invalidationStrategy` | Strategy                                    | Which queries to invalidate on success (see [Invalidation Strategies](#invalidation-strategies))                  |
+| `invalidateOnError`    | `boolean`                                   | Whether to also run the invalidation strategy on mutation failure. Defaults to global client option.              |
 | `errorStrategy`        | `'rollback' \| 'keep'`                      | What to do with the entity on error (see [Error Strategies](#error-strategies))                                   |
 | `onMutate`             | Callback                                    | Called before the mutation runs. Receives `(input, entity)`                                                       |
 | `onSuccess`            | Callback                                    | Called on success. Receives `(input, entity, context)`                                                            |
@@ -113,7 +115,7 @@ Update mutations are defined **on the entity itself**, because they operate on `
 ```ts title="folder.entity.ts"
 import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
 
-export class Folder extends Entity<string, FolderData> {
+export class Folder extends Entity<FolderData> {
   @observable accessor name: string = "";
   @observable accessor description: string = "";
   @observable accessor isPinned: boolean = false;
@@ -143,6 +145,7 @@ export class Folder extends Entity<string, FolderData> {
 | `instance`             | Entity instance                     | The entity instance this mutation operates on — always `this` |
 | `mutationFn`           | `(input, context) => Promise<void>` | The server-side write function. Reads values from `this`      |
 | `invalidationStrategy` | Strategy                            | Which queries to invalidate on success                        |
+| `invalidateOnError`    | `boolean`                           | Whether to also run invalidation on mutation failure          |
 | `errorStrategy`        | Strategy                            | What to do on error (`'rollback'` restores original values)   |
 
 ### Using in React
@@ -206,7 +209,7 @@ Like `UpdateMutation`, delete mutations are defined on the entity:
 ```ts title="folder.entity.ts"
 import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
 
-export class Folder extends Entity<string, FolderData> {
+export class Folder extends Entity<FolderData> {
   readonly deleteMutation = new DeleteMutation({
     entity: Folder,
     instance: this,
@@ -473,6 +476,8 @@ readonly createFolder = new CreateMutation<CreateFolderInput, typeof Folder>({
       headers: { 'Content-Type': 'application/json' },
     })
   },
+  invalidationStrategy: "all-entity-queries",
+  invalidateOnError: true,
   onMutate: (input, entity) => {
     console.log('Creating folder:', entity.id);
   },
