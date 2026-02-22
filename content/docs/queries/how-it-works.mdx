@@ -101,11 +101,11 @@ On subsequent renders (cache hit), steps 2–3 are skipped — the cached ID arr
                    │     TanStack Query       │
                    │  key: [Entity, prefix,   │
                    │       ...queryKey, args] │
-                   └────────────┬─────────────┘
-                                │
-                  cache miss?   │   cache hit?
-              ┌─────────────────┤──────────────┐
-              │                 │              │
+                   └───────────┬──────────────┘
+                               │
+                  cache miss?  │   cache hit?
+              ┌────────────────┤──────────────┐
+              │                │              │
    ┌──────────▼──────────┐     │   ┌──────────▼──────────┐
    │      queryFn()      │     │   │   Return cached IDs │
    │  → fetch raw data   │     │   └──────────┬──────────┘
