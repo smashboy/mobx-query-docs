@@ -1,0 +1,10 @@
+{
+  "title": "Mutations",
+  "pages": [
+    "how-it-works",
+    "store-mutations",
+    "entity-mutations",
+    "optimistic-strategies"
+  ],
+  "defaultOpen": true
+}

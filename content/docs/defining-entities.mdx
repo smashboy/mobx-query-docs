@@ -72,7 +72,7 @@ export class Folder extends Entity<FolderData> {
 
 You may have noticed that the `id` is initialized with `crypto.randomUUID()` instead of being left empty. This is intentional and critical for **optimistic updates**.
 
-When you create a new entity via `CreateMutation`, mobx-query immediately instantiates the entity and adds it to the `EntityManager` collection **before** the server request completes. For this to work, the entity needs a valid, unique `id` at instantiation time.
+When you create a new entity via [`CreateMutation`](/mutations/store-mutations#createmutation), mobx-query immediately instantiates the entity and adds it to the `EntityCollection` **before** the server request completes. For this to work, the entity needs a valid, unique `id` at instantiation time.
 
 If you waited for the server to assign an ID:
 
@@ -84,8 +84,9 @@ By generating the ID client-side, the entity is immediately available in the UI,
 
 <Callout type="warn">
   Always generate IDs on the client side for entities that participate in
-  `CreateMutation`. Use `crypto.randomUUID()` for UUID-based IDs or the built-in
-  `generateEntityId()` helper for sequential IDs.
+  [`CreateMutation`](/mutations/store-mutations#createmutation). Use
+  `crypto.randomUUID()` for UUID-based IDs or the built-in `generateEntityId()`
+  helper for sequential IDs.
 </Callout>
 
 ### The `generateEntityId` Helper
@@ -107,7 +108,7 @@ const id2 = generateEntityId(Folder);
 
 This is useful when:
 
-- You need an ID before `CreateMutation` is called.
+- You need an ID before [`CreateMutation`](/mutations/store-mutations#createmutation) is called.
 - Your backend will replace the client-generated ID with its own (e.g. an auto-incremented integer).
 - You want to distinguish client-created entities from server-confirmed ones in devtools.
 
@@ -283,7 +284,7 @@ type EntityState = "pending" | "confirmed" | "failed";
 | `pending`   | A mutation (`CreateMutation`, `UpdateMutation`, or `DeleteMutation`) is currently in flight. |
 | `failed`    | The most recent mutation failed.                                                             |
 
-The state transitions are managed automatically by the `OptimisticMutationStrategy`:
+The state transitions are managed automatically by the [`OptimisticMutationStrategy`](/mutations/optimistic-strategies):
 
 ```
 confirmed ─── mutation starts ───► pending
@@ -365,7 +366,7 @@ The `reset()` method:
 
 ### Using Dirty Tracking for Mutations
 
-`UpdateMutation` integrates with dirty tracking out of the box. It automatically **skips mutations** if the entity is not dirty, preventing unnecessary server requests:
+[`UpdateMutation`](/mutations/entity-mutations#updatemutation) integrates with dirty tracking out of the box. It automatically **skips mutations** if the entity is not dirty, preventing unnecessary server requests:
 
 ```ts
 readonly updateMutation = new UpdateMutation({
@@ -390,7 +391,7 @@ this.updateMutation.mutate();  // ✅ Runs — entity is dirty
 this.updateMutation.mutate();  // ⏩ Skipped — entity is clean after success
 ```
 
-On a **successful mutation**, the dirty state is automatically cleared via `_clearDirty()`. On a **failed mutation** with the `'rollback'` error strategy (the default), `reset()` is called automatically, reverting the entity to its original values.
+On a **successful mutation**, the dirty state is automatically cleared via `_clearDirty()`. On a **failed mutation** with the [`'rollback'` error strategy](/mutations/optimistic-strategies#error-strategies) (the default), `reset()` is called automatically, reverting the entity to its original values.
 
 ### Using `isDirty` in the UI
 

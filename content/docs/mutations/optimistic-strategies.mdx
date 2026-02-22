@@ -1,0 +1,283 @@
+---
+title: Optimistic Strategies
+description: Configure how mutations handle cache invalidation on success and entity rollback on error — globally and per-mutation.
+---
+
+Every mutation in mobx-query uses an `OptimisticMutationStrategy` that controls two critical behaviors:
+
+1. **Invalidation strategy** — which queries to refetch after the mutation succeeds.
+2. **Error strategy** — what happens to the entity's local state if the mutation fails.
+
+Both can be configured **globally** on the `MQClient` and **overridden per-mutation**.
+
+## Invalidation Strategies
+
+After a successful mutation, mobx-query needs to decide which queries to refetch so the UI stays consistent with the server. The `invalidationStrategy` option controls this behavior.
+
+```ts
+type OptimisticMutationInvalidationStrategy =
+  | "all-queries"
+  | "all-entity-queries"
+  | "referenced-queries"
+  | "none";
+```
+
+### `'all-queries'`
+
+Invalidates **every query** across the entire application — regardless of entity type. This is the broadest possible strategy.
+
+```ts
+invalidationStrategy: "all-queries";
+```
+
+Under the hood, this calls:
+
+```ts
+queryClient.invalidateQueries();
+```
+
+**When to use**: For mutations that have cross-entity side effects (e.g. deleting a folder also affects document queries). Use sparingly — this triggers refetches for every active query.
+
+### `'all-entity-queries'`
+
+Invalidates **every query** that returns the **same entity type** as the mutation. This is the most common choice for creates and deletes.
+
+```ts
+// After creating a folder, all Folder queries are invalidated:
+// - foldersPreviewQuery
+// - folderByIdQuery
+// - any other query using entity: Folder
+invalidationStrategy: "all-entity-queries";
+```
+
+Under the hood, this calls:
+
+```ts
+queryClient.invalidateQueries({ queryKey: ["Folder"] });
+```
+
+Since all Folder queries have `'Folder'` as their first key segment (see [Query Key Construction](/queries/how-it-works#query-key-construction)), this matches every one of them.
+
+**When to use**: For mutations that change the total set of entities (creates, deletes) or modify fields that could affect sort order or filtering in other queries.
+
+### `'referenced-queries'`
+
+Invalidates only the queries that **directly reference the mutated entity** — determined by the entity's `queryHashes` set.
+
+```ts
+invalidationStrategy: "referenced-queries";
+```
+
+For example, if a `Folder` entity appears in `foldersPreviewQuery` and `folderByIdQuery`, only those two queries are refetched — not a `recentFoldersQuery` that doesn't include this particular folder.
+
+**When to use**: When a mutation only affects the mutated entity itself (e.g. renaming a folder) and you want to minimize unnecessary refetches.
+
+<Callout type="warn">
+  `CreateMutation` does **not** support `'referenced-queries'`. A newly created
+  entity doesn't exist in any query's cache yet, so there are no "referenced
+  queries" to invalidate. Use `'all-entity-queries'` or `'all-queries'` instead.
+</Callout>
+
+### `'none'`
+
+Skips all invalidation. No queries are refetched after the mutation succeeds.
+
+```ts
+invalidationStrategy: "none";
+```
+
+**When to use**: For high-frequency mutations where you trust the optimistic state (e.g. auto-saving document content on every keystroke). You might manually invalidate later or rely on the user navigating away and back.
+
+### Comparing Strategies
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           Mutation succeeds                                  │
+├───────────────────┬────────────────────┬────────────────────┬────────────────┤
+│   'all-queries'   │'all-entity-queries'│'referenced-queries'│     'none'     │
+├───────────────────┼────────────────────┼────────────────────┼────────────────┤
+│ Invalidate ALL    │ Invalidate ALL     │ Invalidate ONLY    │ No invalidation│
+│ queries in the    │ queries for this   │ queries that       │                │
+│ entire app        │ entity type        │ reference this     │                │
+│                   │                    │ specific entity    │                │
+├───────────────────┼────────────────────┼────────────────────┼────────────────┤
+│ Broadest, nuclear │ Broad, safe for    │ Targeted,          │ Manual control │
+│                   │ entity collections │ efficient          │                │
+└───────────────────┴────────────────────┴────────────────────┴────────────────┘
+```
+
+## Error Strategies
+
+When a mutation **fails**, you can configure what happens to the entity's local state:
+
+```ts
+type OptimisticMutationErrorStrategy = "rollback" | "keep";
+```
+
+### `'rollback'`
+
+Reverts the entity to its previous state:
+
+- **`UpdateMutation`**: calls `entity.reset()`, restoring all `@observable accessor` fields to their server-confirmed values.
+- **`CreateMutation`**: removes the entity from the `EntityCollection` entirely.
+- **`DeleteMutation`**: removes the entity's ID from `deletedRecordIds`, making it reappear in all query results.
+- **`BatchUpdateMutation`**: calls `entity.reset()` on each dirty entity in the batch.
+
+```ts
+readonly updateMutation = new UpdateMutation({
+  entity: Folder,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  errorStrategy: 'rollback', // default — reverts on error
+});
+```
+
+### `'keep'`
+
+Preserves the optimistic state even after an error. The entity keeps its locally modified values and `state` is set to `'failed'`.
+
+```ts
+readonly updateMutation = new UpdateMutation({
+  entity: Folder,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  errorStrategy: 'keep', // keep local changes, let the user retry
+});
+```
+
+**When to use `'keep'`**: When you want to let the user correct the issue and retry without losing their input. For example, a form submission that fails due to a network error — having the values disappear is a worse UX than showing an error with a retry button.
+
+### Combining Error Strategy with `invalidateOnError`
+
+The `invalidateOnError` option controls whether the invalidation strategy also runs when a mutation **fails**. This is independent of the error strategy:
+
+| `errorStrategy` | `invalidateOnError` | Behavior on error                                                |
+| --------------- | ------------------- | ---------------------------------------------------------------- |
+| `'rollback'`    | `false`             | Reverts entity, no query refetch                                 |
+| `'rollback'`    | `true`              | Reverts entity **and** refetches queries (most conservative)     |
+| `'keep'`        | `false`             | Keeps local changes, no query refetch                            |
+| `'keep'`        | `true`              | Keeps local changes **but** still refetches (useful for syncing) |
+
+## Global Defaults
+
+You can configure the default strategies for all mutations when initializing `MQClient`:
+
+```ts
+const client = new MQClient({
+  context: { queryClient },
+  entities: [Folder, Document],
+  rootStore: () => new RootStore(),
+  invalidationStrategy: "referenced-queries", // default for all mutations
+  errorStrategy: "rollback", // default for all mutations
+  invalidateOnError: true, // default for all mutations
+});
+```
+
+### Built-in Defaults
+
+If no global configuration is specified, these defaults apply:
+
+| Option                 | Default                |
+| ---------------------- | ---------------------- |
+| `invalidationStrategy` | `'referenced-queries'` |
+| `errorStrategy`        | `'rollback'`           |
+| `invalidateOnError`    | `true`                 |
+
+### Per-Mutation Override
+
+Individual mutations can override the global default:
+
+```ts
+readonly updateMutation = new UpdateMutation({
+  entity: Folder,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'none', // overrides the global default
+  errorStrategy: 'keep', // overrides the global default
+})
+```
+
+The override resolution order is:
+
+```
+Per-mutation option  →  MQClient global option  →  Built-in default
+```
+
+## Strategy Recipes
+
+Here are common strategy combinations for real-world scenarios:
+
+### Form Save (default)
+
+The entity is edited in a form. On error, revert to the previous state and show an error message.
+
+```ts
+readonly updateMutation = new UpdateMutation({
+  entity: Folder,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'referenced-queries',
+  errorStrategy: 'rollback',
+})
+```
+
+### Auto-Save
+
+Content is saved automatically on every change (e.g. a document editor). No refetch needed, and local changes should be preserved on error so the user can retry.
+
+```ts
+readonly autoSaveMutation = new UpdateMutation({
+  entity: Document,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'none',
+  errorStrategy: 'keep',
+})
+```
+
+### Critical Write
+
+An operation that affects many entities (e.g. publishing a document changes its status across multiple queries). Refetch all related queries and rollback on error.
+
+```ts
+readonly publishMutation = new UpdateMutation({
+  entity: Document,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'all-entity-queries',
+  errorStrategy: 'rollback',
+})
+```
+
+### Quick Toggle
+
+A simple boolean toggle (e.g. pin/unpin). Changes apply instantly, failures rollback, only the queries referencing this entity need updating.
+
+```ts
+@action onPinFolder() {
+  this.isPinned = !this.isPinned;
+  this.updateMutation.mutate();
+}
+
+readonly updateMutation = new UpdateMutation({
+  entity: Folder,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'referenced-queries',
+  errorStrategy: 'rollback',
+})
+```
+
+### Destructive Delete with Full Sync
+
+A delete that might affect other entity types (e.g. deleting a folder removes its documents). Refetch everything.
+
+```ts
+readonly deleteMutation = new DeleteMutation({
+  entity: Folder,
+  instance: this,
+  mutationFn: async () => { /* ... */ },
+  invalidationStrategy: 'all-queries',
+  errorStrategy: 'rollback',
+})
+```

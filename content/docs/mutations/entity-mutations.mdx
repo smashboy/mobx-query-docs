@@ -1,0 +1,281 @@
+---
+title: Entity Mutations
+description: Define UpdateMutation and DeleteMutation on entity instances to modify or remove individual entities with optimistic updates.
+---
+
+Entity mutations are defined **on entity instances** and operate on a specific entity. They use `this` to reference the entity's current state, keeping mutation logic co-located with the data it modifies.
+
+## UpdateMutation
+
+`UpdateMutation` handles modifications to an existing entity. It integrates deeply with the entity's [dirty tracking](/defining-entities#dirty-tracking) system — automatically skipping mutations when nothing has changed.
+
+### Definition
+
+Update mutations are defined **on the entity itself**, because they operate on `this` — the entity's current observable state:
+
+```ts title="folder.entity.ts"
+import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
+
+export class Folder extends Entity<FolderData> {
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
+
+  readonly updateMutation = new UpdateMutation({
+    entity: Folder,
+    instance: this,
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: this.name,
+          description: this.description,
+          isPinned: this.isPinned,
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    invalidationStrategy: "all-entity-queries",
+  });
+}
+```
+
+### Options
+
+| Option                 | Type                                | Description                                                                           |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `entity`               | Entity constructor                  | The entity class (used for invalidation key grouping)                                 |
+| `instance`             | Entity instance                     | The entity instance this mutation operates on — always `this`                         |
+| `mutationFn`           | `(input, context) => Promise<void>` | The server-side write function. Reads current values from `this`                      |
+| `invalidationStrategy` | Strategy                            | Which queries to invalidate on success                                                |
+| `invalidateOnError`    | `boolean`                           | Whether to also run invalidation on mutation failure                                  |
+| `errorStrategy`        | `'rollback' \| 'keep'`              | What to do on error (`'rollback'` restores original values via `reset()`)             |
+| `onMutate`             | Callback                            | Called before the mutation runs. Receives `(entity, context)`                         |
+| `onSuccess`            | Callback                            | Called on success. Receives `(entity, onMutateResult, context)`                       |
+| `onError`              | Callback                            | Called on error. Receives `(error, entity, onMutateResult, context)`                  |
+| `onSettled`            | Callback                            | Called on both success and error. Receives `(entity, error, onMutateResult, context)` |
+
+### Using in React
+
+```tsx
+const FolderEditor = observer(({ folder }: { folder: Folder }) => {
+  const save = folder.updateMutation.useMutation();
+
+  return (
+    <div>
+      <input
+        value={folder.name}
+        onChange={(e) => {
+          folder.name = e.target.value;
+        }}
+      />
+      <button onClick={save} disabled={!folder.isDirty}>
+        Save
+      </button>
+    </div>
+  );
+});
+```
+
+### Calling Without React
+
+Update mutations can also be called **outside of React** using the `mutate()` method directly. This is useful for actions defined on the entity:
+
+```ts
+@action onPinFolder() {
+  this.isPinned = !this.isPinned;
+  this.updateMutation.mutate();
+}
+```
+
+<Callout type="info">
+  The `useMutation()` hook registers the mutation with TanStack Query's React
+  lifecycle and mutation cache — giving you devtools visibility and
+  component-scoped cleanup. The `mutate()` method bypasses React but still runs
+  through TanStack Query's mutation cache internally via `runSyncMutation`.
+</Callout>
+
+### Dirty Tracking Integration
+
+`UpdateMutation` is tightly integrated with the entity's dirty tracking system:
+
+- **Before mutation**: checks `isDirty` — skips the mutation entirely if the entity hasn't changed.
+- **On success**: calls `_clearDirty()` — clears the dirty state and the internal snapshot map.
+- **On error with rollback**: calls `reset()` — restores all `@observable accessor` fields to their original server-confirmed values.
+
+This means you can safely call `mutate()` multiple times without worrying about unnecessary server requests:
+
+```ts
+this.name = "Updated Name";
+this.updateMutation.mutate(); // ✅ Runs — entity is dirty
+
+this.updateMutation.mutate(); // ⏩ Skipped — entity is clean after the first success
+```
+
+## DeleteMutation
+
+`DeleteMutation` handles the removal of an entity. It provides **instant optimistic hiding** — the entity disappears from all query results immediately, before the server confirms the deletion.
+
+### Definition
+
+Like `UpdateMutation`, delete mutations are defined on the entity:
+
+```ts title="folder.entity.ts"
+import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+
+export class Folder extends Entity<FolderData> {
+  readonly deleteMutation = new DeleteMutation({
+    entity: Folder,
+    instance: this,
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, { method: "DELETE" });
+    },
+    invalidationStrategy: "all-entity-queries",
+  });
+}
+```
+
+### Options
+
+| Option                 | Type                                | Description                                                                           |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `entity`               | Entity constructor                  | The entity class (used for invalidation key grouping)                                 |
+| `instance`             | Entity instance                     | The entity instance to delete — always `this`                                         |
+| `mutationFn`           | `(input, context) => Promise<void>` | The server-side delete function                                                       |
+| `invalidationStrategy` | Strategy                            | Which queries to invalidate on success                                                |
+| `invalidateOnError`    | `boolean`                           | Whether to also run invalidation on mutation failure                                  |
+| `errorStrategy`        | `'rollback' \| 'keep'`              | What to do on error (`'rollback'` re-shows the entity; `'keep'` leaves it hidden)     |
+| `onMutate`             | Callback                            | Called before the mutation runs. Receives `(entity, context)`                         |
+| `onSuccess`            | Callback                            | Called on success. Receives `(entity, onMutateResult, context)`                       |
+| `onError`              | Callback                            | Called on error. Receives `(error, entity, onMutateResult, context)`                  |
+| `onSettled`            | Callback                            | Called on both success and error. Receives `(entity, error, onMutateResult, context)` |
+
+### Using in React and Outside
+
+```tsx
+// React hook
+const FolderItem = observer(({ folder }: { folder: Folder }) => {
+  const deleteFolder = folder.deleteMutation.useMutation();
+  return <button onClick={deleteFolder}>Delete</button>;
+});
+
+// Direct call (e.g. from an action or event handler)
+folder.deleteMutation.mutate();
+```
+
+<Callout type="warn">
+  The `deletedRecordIds` mechanism means the entity is still in memory during
+  the mutation. It's hidden from query results via the `getEntities()` filter,
+  not removed from the collection. This enables clean rollback on error — the
+  entity simply reappears.
+</Callout>
+
+### The `deletedRecordIds` Pattern
+
+When `DeleteMutation` fires, the entity ID is added to a `Set<string>` called `deletedRecordIds` on the `EntityCollection`. Every query that resolves entity instances from the collection automatically filters out IDs in this set:
+
+```
+Before delete:
+  Collection: { "id-1": Folder, "id-2": Folder, "id-3": Folder }
+  deletedRecordIds: Set()
+  Query result: [Folder-1, Folder-2, Folder-3]
+
+After mutate() (pending):
+  Collection: { "id-1": Folder, "id-2": Folder, "id-3": Folder }
+  deletedRecordIds: Set("id-2")
+  Query result: [Folder-1, Folder-3]  ← id-2 is hidden
+
+On success:
+  Collection: { "id-1": Folder, "id-3": Folder }   ← id-2 removed
+  deletedRecordIds: Set()
+  Query result: [Folder-1, Folder-3]
+
+On error (rollback):
+  Collection: { "id-1": Folder, "id-2": Folder, "id-3": Folder }
+  deletedRecordIds: Set()  ← id-2 is visible again
+  Query result: [Folder-1, Folder-2, Folder-3]
+```
+
+This two-phase approach (hide first, then delete) is what enables the instant optimistic UI and clean error recovery.
+
+## Full Entity Example
+
+Here's a complete entity with both mutations co-located alongside queries and actions:
+
+```ts title="folder.entity.ts"
+import { Entity } from "mobx-query/entity/Entity";
+import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
+import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
+import { action, computed, observable } from "mobx";
+
+export class Folder extends Entity<SelectFolderData | CreateFolderData> {
+  id: string = crypto.randomUUID();
+  createdAt: Date = new Date();
+
+  @observable accessor updatedAt: Date = new Date();
+  @observable accessor name: string = "";
+  @observable accessor description: string = "";
+  @observable accessor isPinned: boolean = false;
+  @observable accessor color: string | null = null;
+
+  @computed get displayTitle() {
+    return this.name || "Untitled folder";
+  }
+
+  readonly labelsQuery = new QueryFragmentMany({
+    entity: Label,
+    queryKey: () => ["folderLabels", this.id],
+  });
+
+  readonly updateMutation = new UpdateMutation({
+    entity: Folder,
+    instance: this,
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: this.name,
+          description: this.description,
+          isPinned: this.isPinned,
+          color: this.color,
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    invalidationStrategy: "all-entity-queries",
+  });
+
+  readonly deleteMutation = new DeleteMutation({
+    entity: Folder,
+    instance: this,
+    mutationFn: async () => {
+      await fetch(`/api/folders/${this.id}`, { method: "DELETE" });
+    },
+  });
+
+  @action onPinFolder() {
+    this.isPinned = !this.isPinned;
+    this.updateMutation.mutate();
+  }
+
+  hydrate(data: SelectFolderData | CreateFolderData) {
+    if ("id" in data) {
+      this.id = data.id;
+      this.createdAt = data.createdAt;
+      this.updatedAt = data.updatedAt;
+    }
+    this.name = data.name ?? "";
+    this.description = data.description ?? "";
+    this.isPinned = data.isPinned ?? false;
+    this.color = data.color ?? null;
+  }
+}
+```
+
+<Callout type="idea">
+  Notice how the entity is **self-contained** — it owns its queries, mutations,
+  and actions. This co-location pattern keeps related logic together and makes
+  entities easy to reason about. When you receive a `Folder` instance from any
+  query, all of its behavior is immediately available.
+</Callout>

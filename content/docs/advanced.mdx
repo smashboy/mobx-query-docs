@@ -1,6 +1,6 @@
 ---
 title: Advanced
-description: Register custom typed context, build reusable query/mutation factories, and more.
+description: Register custom typed context, access entity collections directly, and build reusable query/mutation factories.
 ---
 
 ## Custom Typed Context
@@ -184,23 +184,57 @@ export const LabelSidebarGroup = observer(() => {
 
 The `EntityCollection` provides several utility methods that behave like their native `Array` counterparts but are optimized for MobX and respect the internal `deletedRecordIds` state (entities hidden via `DeleteMutation` are automatically excluded).
 
-| Method               | Description                                                                     |
-| :------------------- | :------------------------------------------------------------------------------ |
-| `size`               | (Computed) The number of active entities in the collection.                     |
-| `entities`           | (Computed) Returns all active entities as a plain array.                        |
-| `clientOnlyEntities` | (Computed) Returns only entities created locally (not yet confirmed by server). |
-| `getEntityById(id)`  | Returns a specific entity by its identifier.                                    |
-| `filter(predicate)`  | Returns a filtered array of entities.                                           |
-| `map(callback)`      | Returns an **observable array** of transformed data.                            |
-| `find(predicate)`    | Returns the first entity matching the criteria.                                 |
-| `some(predicate)`    | Returns `true` if any entity matches the criteria.                              |
-| `every(predicate)`   | Returns `true` if all entities match the criteria.                              |
+| Method                | Description                                                                     |
+| :-------------------- | :------------------------------------------------------------------------------ |
+| `size`                | (Computed) The number of active entities in the collection.                     |
+| `entities`            | (Computed) Returns all active entities as a plain array.                        |
+| `clientOnlyEntities`  | (Computed) Returns only entities created locally (not yet confirmed by server). |
+| `getEntityById(id)`   | Returns a specific entity by its identifier.                                    |
+| `filter(predicate)`   | Returns a filtered array of entities.                                           |
+| `find(predicate)`     | Returns the first entity matching the criteria.                                 |
+| `findIndex(pred)`     | Returns the index of the first matching entity.                                 |
+| `findLast(pred)`      | Returns the last entity matching the criteria.                                  |
+| `findLastIndex(pred)` | Returns the index of the last matching entity.                                  |
+| `map(callback)`       | Returns an **observable array** of transformed data.                            |
+| `some(predicate)`     | Returns `true` if any entity matches the criteria.                              |
+| `every(predicate)`    | Returns `true` if all entities match the criteria.                              |
 
 <Callout type="warn">
   Direct collection access bypasses TanStack Query's loading/error states. Use
   `getEntityCollection` in combination with a query hook (as shown in the
   example above) to ensure the data is actually present and to handle loading
   boundaries.
+</Callout>
+
+## Entity Lifecycle and Garbage Collection
+
+Entities in mobx-query follow a lifecycle that's tightly coupled with TanStack Query's cache management. Understanding this lifecycle helps you reason about when entities exist and when they get cleaned up.
+
+### Query Hash Tracking
+
+Every entity keeps a `Set<string>` of **query hashes** — an internal ledger of which queries currently reference this entity. When an entity is hydrated by a query, that query's hash is added to the entity's `queryHashes` set.
+
+This tracking enables two important features:
+
+1. **Automatic garbage collection** — when the last query referencing an entity is removed from TanStack Query's cache, the entity's `queryHashes` set becomes empty, and the entity is automatically removed from the `EntityCollection`.
+2. **`'referenced-queries'` invalidation strategy** — after a mutation, mobx-query knows exactly which queries to invalidate by inspecting the entity's `queryHashes`.
+
+### The Cleanup Flow
+
+```
+TanStack Query removes a cached query (e.g. gcTime expires)
+  → EntityCollection receives a "removed" event via cache subscriber
+  → The removed query's hash is removed from every entity's queryHashes set
+  → If an entity's queryHashes set becomes empty (no more referencing queries)
+    → The entity is removed from the EntityCollection
+```
+
+This means entity instances are **deterministically cleaned up** — you never need to manually manage entity removal. If a user navigates away from a page and the queries expire, the entities they referenced will be automatically garbage collected.
+
+<Callout type="info">
+  Query Fragments use `gcTime: Infinity`, so entities referenced only by
+  fragments are never garbage collected automatically. They persist as long as
+  their parent entity exists.
 </Callout>
 
 ## Reusable Queries and Mutations
@@ -226,9 +260,8 @@ export function createListQuery<TEntity extends EntityConstructorAny>(
   return new QueryMany({
     entity,
     queryKey: () => [endpoint],
-    queryFn: async () => {
-      const res = await fetch(`/api/${endpoint}`);
-      return res.json();
+    queryFn: async (_, ctx) => {
+      return ctx.api.get(`/api/${endpoint}`);
     },
   });
 }
@@ -243,9 +276,8 @@ export function createDetailQuery<TEntity extends EntityConstructorAny>(
   return new QueryOne({
     entity,
     queryKey: () => [`${endpoint}ById`],
-    queryFn: async (id: string) => {
-      const res = await fetch(`/api/${endpoint}/${id}`);
-      return res.json();
+    queryFn: async (id: string, ctx) => {
+      return ctx.api.get(`/api/${endpoint}/${id}`);
     },
   });
 }
@@ -270,11 +302,7 @@ The same pattern works for mutations. Create factories that accept the entity co
 ```ts title="mutation-factories.ts"
 import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
 import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
-import { EntityConstructorAny, EntityAny } from "mobx-query/entity/Entity";
-import {
-  OptimisticMutationInvalidationStrategy,
-  OptimisticMutationErrorStrategy,
-} from "mobx-query/mutations/types";
+import { EntityConstructorAny } from "mobx-query/entity/Entity";
 
 interface EntityMutationConfig<TEntity extends EntityConstructorAny> {
   entity: TEntity;
@@ -296,18 +324,14 @@ export function createUpdateMutation<TEntity extends EntityConstructorAny>(
   return new UpdateMutation({
     entity,
     instance,
-    mutationFn: async () => {
+    mutationFn: async (_, ctx) => {
       const body: Record<string, unknown> = {};
       for (const field of fields) {
         body[field as string] = (instance as Record<string, unknown>)[
           field as string
         ];
       }
-      await fetch(`/api/${endpoint}/${instance.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-        headers: { "Content-Type": "application/json" },
-      });
+      await ctx.api.patch(`/api/${endpoint}/${instance.id}`, body);
     },
     invalidationStrategy,
   });
@@ -324,8 +348,8 @@ export function createDeleteMutation<TEntity extends EntityConstructorAny>(
   return new DeleteMutation({
     entity,
     instance,
-    mutationFn: async () => {
-      await fetch(`/api/${endpoint}/${instance.id}`, { method: "DELETE" });
+    mutationFn: async (_, ctx) => {
+      await ctx.api.delete(`/api/${endpoint}/${instance.id}`);
     },
   });
 }
@@ -388,22 +412,19 @@ export abstract class CrudEntity<
   readonly updateMutation = new UpdateMutation({
     entity: this.constructor as any,
     instance: this,
-    mutationFn: async () => {
-      await fetch(`/api/${this.getEndpoint()}/${this.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(this.getUpdateBody()),
-        headers: { "Content-Type": "application/json" },
-      });
+    mutationFn: async (_, ctx) => {
+      await ctx.api.patch(
+        `/api/${this.getEndpoint()}/${this.id}`,
+        this.getUpdateBody(),
+      );
     },
   });
 
   readonly deleteMutation = new DeleteMutation({
     entity: this.constructor as any,
     instance: this,
-    mutationFn: async () => {
-      await fetch(`/api/${this.getEndpoint()}/${this.id}`, {
-        method: "DELETE",
-      });
+    mutationFn: async (_, ctx) => {
+      await ctx.api.delete(`/api/${this.getEndpoint()}/${this.id}`);
     },
   });
 }

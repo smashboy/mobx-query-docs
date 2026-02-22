@@ -14,12 +14,12 @@ Consider a `Document` entity that has many `Label` entities. You could define a 
 export class LabelsStore {
   readonly labelsByDocumentQuery = new QueryMany({
     entity: Label,
-    queryKey: () => ['labelsByDocument'],
+    queryKey: () => ["labelsByDocument"],
     queryFn: async (documentId: string) => {
-      const res = await fetch(`/api/documents/${documentId}/labels`)
-      return res.json()
+      const res = await fetch(`/api/documents/${documentId}/labels`);
+      return res.json();
     },
-  })
+  });
 }
 ```
 
@@ -47,41 +47,39 @@ The key difference: fragments have `staleTime: Infinity` and `gcTime: Infinity`.
 Fragments are typically declared as `readonly` properties on an entity:
 
 ```ts title="document.entity.ts"
-import { Entity } from 'mobx-query/entity/Entity'
-import { QueryFragmentMany } from 'mobx-query/queries/QueryFragmentMany'
-import { Label } from './label.entity'
+import { Entity } from "mobx-query/entity/Entity";
+import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
+import { Label } from "./label.entity";
 
 interface DocumentData {
-  id: string
-  title: string
-  labels?: LabelData[]
+  id: string;
+  title: string;
+  labels?: LabelData[];
 }
 
 export class Document extends Entity<DocumentData> {
-  id: string = crypto.randomUUID()
-  @observable accessor title: string = ''
+  id: string = crypto.randomUUID();
+  @observable accessor title: string = "";
 
   // Fragment: labels belonging to this document
   readonly labelsQuery = new QueryFragmentMany({
     entity: Label,
-    queryKey: () => ['documentLabels', this.id],
-  })
+    queryKey: () => ["documentLabels", this.id],
+  });
 
   hydrate(data: DocumentData) {
-    this.id = data.id
-    this.title = data.title
+    this.id = data.id;
+    this.title = data.title;
 
     // Seed the fragment from the parent query's joined data
     if (data.labels) {
-      this.labelsQuery.setQueryData(data.labels)
+      this.labelsQuery.setQueryData(data.labels);
     }
   }
 }
 ```
 
 Notice that `queryFn` is **optional** on fragments. If the parent always provides the data via `setQueryData`, you don't need a fallback fetch function at all.
-
-### With a Fallback Fetch
 
 If the fragment data might not always be available from the parent, provide a `queryFn` as a fallback:
 
@@ -90,12 +88,20 @@ readonly labelsQuery = new QueryFragmentMany({
   entity: Label,
   queryKey: () => ["documentLabels", this.id],
   queryFn: async () => {
-    // Only called if setQueryData was never called
+    // Only called when you explicitly invoke prefetch() or ensureData()
     const res = await fetch(`/api/documents/${this.id}/labels`);
     return res.json();
   },
 });
 ```
+
+<Callout type="info">
+  Unlike regular queries, a fragment's `queryFn` is **never called
+  automatically** by TanStack Query (because `staleTime` is `Infinity`). It only
+  runs when you explicitly invoke `prefetch()` or `ensureData()` on the
+  fragment. This makes `queryFn` a manual escape hatch, not an automatic
+  fallback.
+</Callout>
 
 ### `QueryFragmentOne`
 
@@ -151,11 +157,11 @@ hydrate(data: DocumentData) {
 **3. A component renders the labels using the fragment's `useQuery` hook:**
 
 ```tsx title="DocumentLabels.tsx"
-import { observer } from 'mobx-react-lite'
-import type { Document } from './document.entity'
+import { observer } from "mobx-react-lite";
+import type { Document } from "./document.entity";
 
 const DocumentLabels = observer(({ document }: { document: Document }) => {
-  const labels = document.labelsQuery.useQuery()
+  const labels = document.labelsQuery.useQuery();
 
   return (
     <div>
@@ -163,8 +169,8 @@ const DocumentLabels = observer(({ document }: { document: Document }) => {
         <Badge key={label.id}>{label.name}</Badge>
       ))}
     </div>
-  )
-})
+  );
+});
 ```
 
 Since the fragment's cache was already seeded by `hydrate()` and has `staleTime: Infinity`, **no additional network request is made**. The labels are immediately available.

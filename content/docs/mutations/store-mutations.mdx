@@ -1,0 +1,169 @@
+---
+title: Store Mutations
+description: Define CreateMutation and BatchUpdateMutation on stores to insert new entities and batch-update multiple entities at once.
+---
+
+Store mutations are defined on **store classes** and operate at the collection level — they create new entities or modify multiple existing ones. Unlike [entity mutations](/mutations/entity-mutations), they are not tied to a specific entity instance.
+
+## CreateMutation
+
+`CreateMutation` handles the creation of new entities. It provides **instant optimistic insertion** — the entity appears in the UI immediately without waiting for the server response.
+
+### Definition
+
+```ts title="folders.store.ts"
+import { CreateMutation } from "mobx-query/mutations/CreateMutation";
+import { Folder } from "./folder.entity";
+
+interface CreateFolderInput {
+  name: string;
+  description: string;
+}
+
+export class FoldersStore {
+  readonly createFolder = new CreateMutation<CreateFolderInput, typeof Folder>({
+    entity: Folder,
+    mutationFn: async (input, entity) => {
+      // `entity` is the already-hydrated Folder instance
+      await fetch("/api/folders", {
+        method: "POST",
+        body: JSON.stringify({ id: entity.id, ...input }),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    invalidationStrategy: "all-entity-queries",
+    invalidateOnError: true,
+  });
+}
+```
+
+<Callout type="info">
+  Notice that `entity.id` is sent to the server. Since entities generate their
+  IDs client-side (via `crypto.randomUUID()` or `generateEntityId()`), the
+  server should accept and use this ID. See [Defining Entities — Why Generate
+  IDs on the Client
+  Side](/defining-entities#why-generate-ids-on-the-client-side) for more on this
+  pattern.
+</Callout>
+
+### Options
+
+| Option                 | Type                                        | Description                                                                                                       |
+| ---------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `entity`               | Entity constructor                          | The entity class to create (e.g. `Folder`)                                                                        |
+| `mutationFn`           | `(input, entity, context) => Promise<void>` | The server-side write function. Receives the raw input, the hydrated entity instance, and your registered context |
+| `invalidationStrategy` | Strategy                                    | Which queries to invalidate on success (see [Optimistic Strategies](/mutations/optimistic-strategies))            |
+| `invalidateOnError`    | `boolean`                                   | Whether to also run the invalidation strategy on mutation failure. Defaults to global client option               |
+| `errorStrategy`        | `'rollback' \| 'keep'`                      | What to do with the entity on error (see [Error Strategies](/mutations/optimistic-strategies#error-strategies))   |
+| `onMutate`             | Callback                                    | Called before the mutation runs. Receives `(input, entity, context)`                                              |
+| `onSuccess`            | Callback                                    | Called on success. Receives `(input, entity, onMutateResult, context)`                                            |
+| `onError`              | Callback                                    | Called on error. Receives `(error, input, entity, onMutateResult, context)`                                       |
+| `onSettled`            | Callback                                    | Called on both success and error. Receives `(input, entity, error, onMutateResult, context)`                      |
+
+### Using in React
+
+`CreateMutation` exposes a `useMutation()` hook that returns a typed trigger function:
+
+```tsx
+import { observer } from "mobx-react-lite";
+
+const CreateFolderButton = observer(() => {
+  const { rootStore } = useMQ();
+  const createFolder = rootStore.folders.createFolder.useMutation();
+
+  return (
+    <button
+      onClick={() => createFolder({ name: "New Folder", description: "" })}
+    >
+      Create Folder
+    </button>
+  );
+});
+```
+
+The folder appears in the UI **immediately** after clicking — before the server responds.
+
+### Invalidation Strategy Restriction
+
+`CreateMutation` does **not** support the `'referenced-queries'` invalidation strategy. Since a newly created entity doesn't exist in any query's cache yet, there are no "referenced queries" to invalidate. Use `'all-entity-queries'` (the default for creates) or `'all-queries'` instead.
+
+## BatchUpdateMutation
+
+`BatchUpdateMutation` handles updating **multiple existing entities** in a single mutation. It integrates with dirty tracking — only entities that have actually been modified are included in the mutation.
+
+### Definition
+
+```ts title="folders.store.ts"
+import { BatchUpdateMutation } from "mobx-query/mutations/BatchUpdateMutation";
+import { Folder } from "./folder.entity";
+
+export class FoldersStore {
+  readonly reorderFolders = new BatchUpdateMutation<typeof Folder>({
+    entity: Folder,
+    mutationFn: async (entities, context) => {
+      await fetch("/api/folders/reorder", {
+        method: "PATCH",
+        body: JSON.stringify(
+          entities.map((folder) => ({
+            id: folder.id,
+            sortOrder: folder.sortOrder,
+          })),
+        ),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    invalidationStrategy: "all-entity-queries",
+  });
+}
+```
+
+### Options
+
+| Option                 | Type                                   | Description                                                                                            |
+| ---------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `entity`               | Entity constructor                     | The entity class being updated (e.g. `Folder`)                                                         |
+| `mutationFn`           | `(entities, context) => Promise<void>` | The server-side write function. Receives the array of dirty entities and your registered context       |
+| `invalidationStrategy` | Strategy                               | Which queries to invalidate on success (see [Optimistic Strategies](/mutations/optimistic-strategies)) |
+| `invalidateOnError`    | `boolean`                              | Whether to also run the invalidation strategy on mutation failure                                      |
+| `errorStrategy`        | `'rollback' \| 'keep'`                 | What to do with entities on error                                                                      |
+| `onMutate`             | Callback                               | Called before the mutation runs. Receives `(entities, context)`                                        |
+| `onSuccess`            | Callback                               | Called on success. Receives `(entities, context, onMutateResult)`                                      |
+| `onError`              | Callback                               | Called on error. Receives `(error, entities, context, onMutateResult)`                                 |
+| `onSettled`            | Callback                               | Called on both success and error. Receives `(entities, context, onMutateResult, error)`                |
+
+### Using in React
+
+```tsx
+import { observer } from "mobx-react-lite";
+
+const ReorderButton = observer(() => {
+  const { rootStore } = useMQ();
+  const reorder = rootStore.folders.reorderFolders.useMutation();
+
+  const handleReorder = () => {
+    // Assume folders have already been reordered locally
+    // (e.g. via drag-and-drop with sortOrder updated on each entity)
+    const folders = rootStore.folders.foldersQuery.useSuspenseQuery();
+    reorder(folders);
+  };
+
+  return <button onClick={handleReorder}>Save Order</button>;
+});
+```
+
+<Callout>
+  `BatchUpdateMutation` automatically filters out clean entities. If you pass an
+  array of 10 folders but only 3 have been modified, only those 3 are sent to
+  `mutationFn`. This prevents unnecessary server writes and keeps the optimistic
+  strategy scoped to only the entities that actually changed.
+</Callout>
+
+### When to Use BatchUpdateMutation
+
+Use `BatchUpdateMutation` when you need to persist changes to **multiple entities from the same collection** in a single request. Common scenarios:
+
+- **Drag-and-drop reordering** — updating `sortOrder` on multiple entities
+- **Bulk status changes** — marking multiple items as read/archived
+- **Batch property updates** — applying the same change to a selection of entities
+
+For updating a **single entity**, use [UpdateMutation](/mutations/entity-mutations#updatemutation) instead.

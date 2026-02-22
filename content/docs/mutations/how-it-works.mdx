@@ -1,0 +1,173 @@
+---
+title: How It Works
+description: Understanding how mutations work in mobx-query — from optimistic updates to entity state management and automatic cache invalidation.
+---
+
+This page explains the high-level architecture behind mutations in mobx-query. Understanding these mechanics helps you choose the right mutation class and configure the right strategies for your use case.
+
+## Mutation Architecture
+
+Mutations in mobx-query handle **write operations** — creating new entities, updating existing ones, and deleting records. Every mutation class integrates with TanStack Query's mutation cache and provides built-in optimistic update behavior with configurable strategies.
+
+mobx-query provides four mutation classes, organized by where they're defined and what they operate on:
+
+### Store Mutations
+
+Defined on stores — they operate on the **entity collection** level.
+
+| Class                 | Purpose                                   |
+| --------------------- | ----------------------------------------- |
+| `CreateMutation`      | Insert a new entity into the collection   |
+| `BatchUpdateMutation` | Update multiple existing entities at once |
+
+### Entity Mutations
+
+Defined on entity instances — they operate on **a specific entity**.
+
+| Class            | Purpose                            |
+| ---------------- | ---------------------------------- |
+| `UpdateMutation` | Modify an existing entity's fields |
+| `DeleteMutation` | Remove an entity                   |
+
+## The Optimistic Update Pattern
+
+All mutations in mobx-query follow the same optimistic update pattern:
+
+```
+1. Apply changes locally (instant UI update)
+2. Set entity state → 'pending'
+3. Run mutationFn asynchronously (server request)
+4. On success → confirm changes, invalidate queries
+5. On error → rollback or keep, based on strategy
+```
+
+This means your UI updates **immediately** when the user performs an action — without waiting for the server. The server request happens in the background, and if it fails, the library handles the rollback automatically.
+
+## Entity State Transitions
+
+All mutations update the `entity.state` property through the `OptimisticMutationStrategy`:
+
+```
+confirmed ──── mutate() ────► pending
+                                 │
+                        ┌────────┴────────┐
+                        ▼                  ▼
+                    confirmed           failed
+                  (on success)        (on error)
+```
+
+| State       | Meaning                                                                                      |
+| ----------- | -------------------------------------------------------------------------------------------- |
+| `confirmed` | Default state. The entity is in sync with the server (or no mutation is in progress).        |
+| `pending`   | A mutation (`CreateMutation`, `UpdateMutation`, or `DeleteMutation`) is currently in flight. |
+| `failed`    | The most recent mutation failed.                                                             |
+
+Use `entity.state` in your UI to show loading spinners, disable buttons, or display error indicators:
+
+```tsx
+const FolderActions = observer(({ folder }: { folder: Folder }) => {
+  return (
+    <div>
+      <button
+        onClick={() => folder.deleteMutation.mutate()}
+        disabled={folder.state === "pending"}
+      >
+        {folder.state === "pending" ? "Deleting..." : "Delete"}
+      </button>
+      {folder.state === "failed" && (
+        <span className="error">Operation failed. Please try again.</span>
+      )}
+    </div>
+  );
+});
+```
+
+## Mutation Key Construction
+
+Similar to queries, mutation keys are constructed with prefixes for organized cache management:
+
+```
+[ EntityName, MutationPrefix, ...entityId? ]
+```
+
+Each mutation class uses a unique prefix:
+
+| Class                 | Prefix                        |
+| --------------------- | ----------------------------- |
+| `CreateMutation`      | `__mutation__create__`        |
+| `UpdateMutation`      | `__mutation__update__`        |
+| `DeleteMutation`      | `__mutation__delete__`        |
+| `BatchUpdateMutation` | `__mutation__batch__update__` |
+
+Entity mutations (`UpdateMutation`, `DeleteMutation`) also append the entity's `id`, creating a unique mutation key per entity instance. This prevents duplicate mutations on the same entity and enables TanStack Query devtools inspection.
+
+## Lifecycle Callbacks
+
+All mutation classes support lifecycle callbacks that run at specific points during the mutation:
+
+| Callback    | When                          | Receives                             |
+| ----------- | ----------------------------- | ------------------------------------ |
+| `onMutate`  | Before `mutationFn` runs      | Entity + mutation context            |
+| `onSuccess` | After `mutationFn` resolves   | Entity + context + `onMutate` result |
+| `onError`   | After `mutationFn` rejects    | Error + entity + context             |
+| `onSettled` | After either success or error | Entity + error (or null) + context   |
+
+```ts
+readonly createFolder = new CreateMutation<CreateFolderInput, typeof Folder>({
+  entity: Folder,
+  mutationFn: async (input, entity) => {
+    await fetch('/api/folders', {
+      method: 'POST',
+      body: JSON.stringify({ id: entity.id, ...input }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  },
+  invalidationStrategy: "all-entity-queries",
+  onMutate: (input, entity) => {
+    console.log('Creating folder:', entity.id);
+  },
+  onSuccess: (input, entity) => {
+    console.log('Folder created successfully:', entity.id);
+    // Navigate to the new folder, show a toast, etc.
+  },
+  onError: (error) => {
+    console.error('Failed to create folder:', error);
+  },
+});
+```
+
+<Callout type="idea">
+  Lifecycle callbacks run **after** the built-in optimistic strategy logic. For
+  example, `onError` runs after the entity has already been rolled back (if
+  using `'rollback'` strategy). This means you can safely inspect `entity.state`
+  and `entity.isDirty` in callbacks and they'll reflect the post-strategy state.
+</Callout>
+
+## `useMutation()` vs `mutate()`
+
+Entity mutations (`UpdateMutation`, `DeleteMutation`) expose two ways to trigger them:
+
+### `useMutation()` — React Hook
+
+Registers the mutation with TanStack Query's React lifecycle and mutation cache. Gives you devtools visibility and component-scoped cleanup:
+
+```tsx
+const save = folder.updateMutation.useMutation();
+// Returns a trigger function to call in event handlers
+```
+
+### `mutate()` — Direct Call
+
+Bypasses React but still runs through TanStack Query's mutation cache internally via `runSyncMutation`. Useful for entity actions and event handlers outside of React:
+
+```ts
+@action onPinFolder() {
+  this.isPinned = !this.isPinned;
+  this.updateMutation.mutate();
+}
+```
+
+<Callout type="info">
+  `CreateMutation` and `BatchUpdateMutation` only support the `useMutation()`
+  hook, since they are store-level operations that require React's lifecycle.
+</Callout>
