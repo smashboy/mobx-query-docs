@@ -26,11 +26,11 @@ Every query result passes through a centralized entity collection. If `Folder #4
 
 ```ts
 // Both queries return the same Folder instance for the same ID
-const folders = foldersQuery.useSuspenseQuery() // Folder[]
-const folder = folderQuery.useSuspenseQuery(folderId) // Folder
+const folders = foldersQuery.useSuspenseQuery(); // Folder[]
+const folder = folderQuery.useSuspenseQuery(folderId); // Folder
 
 // Updating a property on the detail view...
-folder.name = 'New Name'
+folder.name = "New Name";
 
 // ...is instantly reflected in the list view.
 // Same object reference. Zero effort.
@@ -43,12 +43,12 @@ Define queries that look like standard TanStack Query options, but return fully 
 ```ts
 const foldersQuery = new QueryMany({
   entity: Folder,
-  queryKey: () => ['folders'],
+  queryKey: () => ["folders"],
   queryFn: async () => {
-    const res = await fetch('/api/folders')
-    return res.json() // raw JSON in, Folder[] out
+    const res = await fetch("/api/folders");
+    return res.json(); // raw JSON in, Folder[] out
   },
-})
+});
 ```
 
 You get all of TanStack Query's features — caching, background refetching, stale-while-revalidate — with MobX-observable entities as the output.
@@ -70,11 +70,11 @@ All mutations integrate with TanStack Query's mutation cache — you get retry, 
 Every entity automatically tracks field-level changes after hydration:
 
 ```ts
-folder.name = 'Updated'
-console.log(folder.isDirty) // true
+folder.name = "Updated";
+console.log(folder.isDirty); // true
 
-folder.reset() // restores all fields to their server values
-console.log(folder.isDirty) // false
+folder.reset(); // restores all fields to their server values
+console.log(folder.isDirty); // false
 ```
 
 This makes building edit forms trivially easy — your entity _is_ the form model. The `UpdateMutation` takes advantage of this by automatically skipping mutations when nothing has changed.

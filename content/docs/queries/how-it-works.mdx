@@ -20,17 +20,17 @@ For example, given this query:
 ```ts
 const foldersQuery = new QueryMany({
   entity: Folder,
-  queryKey: () => ['recent'],
+  queryKey: () => ["recent"],
   queryFn: async (limit: number) => {
     /* ... */
   },
-})
+});
 ```
 
 When called with `foldersQuery.useSuspenseQuery(5)`, the actual TanStack Query key becomes:
 
 ```ts
-;['Folder', '__query__many__', 'recent', 5]
+["Folder", "__query__many__", "recent", 5];
 ```
 
 | Segment             | Source                   | Purpose                                                              |
@@ -100,7 +100,7 @@ On subsequent renders (cache hit), steps 2–3 are skipped — the cached ID arr
                    ┌────────────▼─────────────┐
                    │     TanStack Query       │
                    │  key: [Entity, prefix,   │
-                   │        ...queryKey, args] │
+                   │       ...queryKey, args] │
                    └────────────┬─────────────┘
                                 │
                   cache miss?   │   cache hit?
@@ -120,8 +120,8 @@ On subsequent renders (cache hit), steps 2–3 are skipped — the cached ID arr
               └────────────────┤──────────────┘
                                │
                   ┌────────────▼─────────────┐
-                  │    Entity instances       │
-                  │    returned to component  │
+                  │    Entity instances      │
+                  │   returned to component  │
                   └──────────────────────────┘
 ```
 
