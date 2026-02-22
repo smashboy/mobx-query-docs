@@ -17,7 +17,7 @@ Both share the same options interface, hooks pattern, and helper methods — the
 Use `QueryMany` to define queries that return **a list of entities**:
 
 ```ts title="folders.store.ts"
-import { QueryMany } from "mobx-query/queries/QueryMany";
+import { QueryMany } from "@mobx-query/core";
 import { Folder, type FolderData } from "./folder.entity";
 
 export class FoldersStore {
@@ -37,7 +37,7 @@ export class FoldersStore {
 Use `QueryOne` to fetch a **single entity** by its identifier:
 
 ```ts title="folders.store.ts"
-import { QueryOne } from "mobx-query/queries/QueryOne";
+import { QueryOne } from "@mobx-query/core";
 import { Folder, type FolderData } from "./folder.entity";
 
 export class FoldersStore {

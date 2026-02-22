@@ -14,7 +14,7 @@ Entity mutations are defined **on entity instances** and operate on a specific e
 Update mutations are defined **on the entity itself**, because they operate on `this` — the entity's current observable state:
 
 ```ts title="folder.entity.ts"
-import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
+import { UpdateMutation } from "@mobx-query/core";
 
 export class Folder extends Entity<FolderData> {
   @observable accessor name: string = "";
@@ -121,7 +121,7 @@ this.updateMutation.mutate(); // ⏩ Skipped — entity is clean after the first
 Like `UpdateMutation`, delete mutations are defined on the entity:
 
 ```ts title="folder.entity.ts"
-import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+import { DeleteMutation } from "@mobx-query/core";
 
 export class Folder extends Entity<FolderData> {
   readonly deleteMutation = new DeleteMutation({
@@ -203,9 +203,13 @@ This two-phase approach (hide first, then delete) is what enables the instant op
 Here's a complete entity with both mutations co-located alongside queries and actions:
 
 ```ts title="folder.entity.ts"
-import { Entity } from "mobx-query/entity/Entity";
-import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
-import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+import {
+  Entity,
+  UpdateMutation,
+  UpdateMutation,
+  DeleteMutation,
+  QueryFragmentMany,
+} from "@mobx-query/core";
 import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
 import { action, computed, observable } from "mobx";
 

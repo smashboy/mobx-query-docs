@@ -10,8 +10,7 @@ This guide walks you through a complete working example — from defining an ent
 An **Entity** is a MobX-observable class that represents a single record from your server or database. Extend the `Entity` base class and implement the required `hydrate()` method:
 
 ```ts title="todo.entity.ts"
-import { Entity } from "mobx-query/entity/Entity";
-import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
+import { Entity, UpdateMutation } from "@mobx-query/core";
 import { observable, action } from "mobx";
 
 interface TodoData {
@@ -68,8 +67,7 @@ A few things to note:
 A **Store** groups related queries and mutations for a specific domain. Define your queries using `QueryMany` (for lists) or `QueryOne` (for single records):
 
 ```ts title="todos.store.ts"
-import { QueryMany } from "mobx-query/queries/QueryMany";
-import { CreateMutation } from "mobx-query/mutations/CreateMutation";
+import { QueryMany, CreateMutation } from "@mobx-query/core";
 import { Todo, type TodoData } from "./todo.entity";
 
 export class TodosStore {
@@ -108,8 +106,7 @@ Create an `MQClient` instance — the root of your mobx-query setup. It register
 
 ```ts title="mqclient.ts"
 import { QueryClient } from "@tanstack/react-query";
-import { MQClient } from "mobx-query/MQClient";
-import { createReactContext } from "mobx-query/react/createReactContext";
+import { MQClient, createReactContext } from "@mobx-query/core";
 import { Todo } from "./todo.entity";
 import { TodosStore } from "./todos.store";
 

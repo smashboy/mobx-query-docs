@@ -483,7 +483,7 @@ export default function HomePage() {
               stepLabel="Define"
               lines={[
                 {
-                  text: `import { Entity } from "mobx-query/entity/Entity";`,
+                  text: `import { Entity } from "@mobx-query/core";`,
                   kind: "import",
                 },
                 {
@@ -532,7 +532,7 @@ export default function HomePage() {
               stepLabel="Query"
               lines={[
                 {
-                  text: `import { QueryMany } from "mobx-query/queries/QueryMany";`,
+                  text: `import { QueryMany } from "@mobx-query/core";`,
                   kind: "import",
                 },
                 {

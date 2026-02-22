@@ -47,8 +47,7 @@ The key difference: fragments have `staleTime: Infinity` and `gcTime: Infinity`.
 Fragments are typically declared as `readonly` properties on an entity:
 
 ```ts title="document.entity.ts"
-import { Entity } from "mobx-query/entity/Entity";
-import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
+import { QueryFragmentMany, Entity } from "@mobx-query/core";
 import { Label } from "./label.entity";
 
 interface DocumentData {

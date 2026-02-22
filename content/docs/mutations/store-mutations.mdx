@@ -12,7 +12,7 @@ Store mutations are defined on **store classes** and operate at the collection l
 ### Definition
 
 ```ts title="folders.store.ts"
-import { CreateMutation } from "mobx-query/mutations/CreateMutation";
+import { CreateMutation } from "@mobx-query/core";
 import { Folder } from "./folder.entity";
 
 interface CreateFolderInput {
@@ -94,7 +94,7 @@ The folder appears in the UI **immediately** after clicking — before the serve
 ### Definition
 
 ```ts title="folders.store.ts"
-import { BatchUpdateMutation } from "mobx-query/mutations/BatchUpdateMutation";
+import { BatchUpdateMutation } from "@mobx-query/core";
 import { Folder } from "./folder.entity";
 
 export class FoldersStore {

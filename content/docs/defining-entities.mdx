@@ -15,7 +15,7 @@ Every entity in mobx-query extends the abstract `Entity` base class and must imp
 Here's a minimal entity definition:
 
 ```ts title="folder.entity.ts"
-import { Entity } from "mobx-query/entity/Entity";
+import { Entity } from "@mobx-query/core";
 import { observable } from "mobx";
 
 interface FolderData {
@@ -94,7 +94,7 @@ By generating the ID client-side, the entity is immediately available in the UI,
 mobx-query provides a built-in utility for generating deterministic, client-only entity IDs:
 
 ```ts
-import { generateEntityId } from "mobx-query/utils/generateEntityId";
+import { generateEntityId } from "@mobx-query/core";
 import { Folder } from "./folder.entity";
 
 const id = generateEntityId(Folder);
@@ -119,7 +119,7 @@ Sometimes your data model doesn't have a single `id` field. For example, a join 
 The simplest approach is to concatenate the fields into a single string:
 
 ```ts title="document-label.entity.ts"
-import { Entity } from "mobx-query/entity/Entity";
+import { Entity } from "@mobx-query/core";
 
 interface DocumentLabelData {
   documentId: string;
@@ -242,7 +242,7 @@ This pattern works well because:
 If your query returns nested data (e.g. a document with its labels), you can hydrate related entities inside `hydrate()` using fragment queries:
 
 ```ts title="document.entity.ts"
-import { QueryFragmentMany } from "mobx-query/queries/QueryFragmentMany";
+import { QueryFragmentMany } from "@mobx-query/core";
 import { Label } from "./label.entity";
 
 export class Document extends Entity<DocumentData> {
@@ -462,10 +462,12 @@ Computed values are cached by MobX and only re-evaluated when their dependencies
 Here's a complete, real-world entity with queries, mutations, computed properties, and dirty tracking:
 
 ```ts title="folder.entity.ts"
-import { Entity } from "mobx-query/entity/Entity";
-import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
-import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
-import { QueryMany } from "mobx-query/queries/QueryMany";
+import {
+  Entity,
+  UpdateMutation,
+  DeleteMutation,
+  QueryMany,
+} from "@mobx-query/core";
 import { action, computed, observable } from "mobx";
 
 export class Folder extends Entity<SelectFolderData | CreateFolderData> {

@@ -14,7 +14,7 @@ mobx-query supports this via **global namespace augmentation**. You define your 
 Create a registration file that extends the base `MQClientContext` and registers it via the `MobXQuery` global namespace:
 
 ```ts title="mq-register.ts"
-import type { MQClientContext as MQClientContextBase } from "mobx-query/types";
+import type { MQClientContext as MQClientContextBase } from "@mobx-query/core";
 
 // Your app's custom services
 interface ApiClient {
@@ -52,7 +52,7 @@ When creating your `MQClient`, provide the custom context object. TypeScript wil
 
 ```ts title="mqclient.ts"
 import "./mq-register"; // ensure the registration is loaded
-import { MQClient } from "mobx-query/MQClient";
+import { MQClient } from "@mobx-query/core";
 import { QueryClient } from "@tanstack/react-query";
 
 const queryClient = new QueryClient();
@@ -246,9 +246,7 @@ As your application grows, you'll notice patterns repeating across entities. Eve
 Create a factory function that encapsulates common query patterns:
 
 ```ts title="query-factories.ts"
-import { QueryMany } from "mobx-query/queries/QueryMany";
-import { QueryOne } from "mobx-query/queries/QueryOne";
-import { EntityConstructorAny } from "mobx-query/entity/Entity";
+import { QueryMany, QueryOne, EntityConstructorAny } from "@mobx-query/core";
 
 /**
  * Creates a standard "list all" query for an entity.
@@ -300,9 +298,11 @@ export class FoldersStore {
 The same pattern works for mutations. Create factories that accept the entity constructor, instance, and endpoint:
 
 ```ts title="mutation-factories.ts"
-import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
-import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
-import { EntityConstructorAny } from "mobx-query/entity/Entity";
+import {
+  UpdateMutation,
+  DeleteMutation,
+  EntityConstructorAny,
+} from "@mobx-query/core";
 
 interface EntityMutationConfig<TEntity extends EntityConstructorAny> {
   entity: TEntity;
@@ -358,7 +358,7 @@ export function createDeleteMutation<TEntity extends EntityConstructorAny>(
 Use the factories on your entity:
 
 ```ts title="folder.entity.ts"
-import { Entity } from "mobx-query/entity/Entity";
+import { Entity } from "@mobx-query/core";
 import {
   createUpdateMutation,
   createDeleteMutation,
@@ -391,9 +391,7 @@ export class Folder extends Entity<FolderData> {
 For the highest level of reuse, you can create **abstract base entity classes** that bundle common mutations and actions:
 
 ```ts title="CrudEntity.ts"
-import { Entity } from "mobx-query/entity/Entity";
-import { UpdateMutation } from "mobx-query/mutations/UpdateMutation";
-import { DeleteMutation } from "mobx-query/mutations/DeleteMutation";
+import { Entity, UpdateMutation, DeleteMutation } from "@mobx-query/core";
 
 /**
  * Base entity with built-in update and delete mutations.
