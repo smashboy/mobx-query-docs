@@ -42,33 +42,28 @@ export default function HomePage() {
             </div>
 
             <h1 className="hero-title">
-              Stop juggling
+              Your entities deserve
               <br />
-              <span className="hero-title-accent">raw JSON</span> and{" "}
-              <span className="hero-title-accent">observable state</span>
+              <span className="hero-title-accent">first-class reactivity</span>
             </h1>
 
             <p className="hero-description">
-              <strong>mobx-query</strong> gives you a single, normalized entity
-              layer that turns TanStack Query results into fully reactive MobX
-              objects — with optimistic mutations, dirty tracking, and
-              auto-rollback built in.
+              <strong>mobx-query</strong> is the reactive bridge between
+              TanStack Query and MobX. Get normalized entities, optimistic
+              mutations, and dirty tracking out of the box — so you can focus on
+              building features, not sync logic.
             </p>
 
             <div className="hero-actions">
               <Link
-                href="/docs/getting-started/quickstart"
+                href="/docs/quickstart"
                 className="btn-primary"
                 id="hero-get-started"
               >
                 Get Started
                 <ArrowRight size={16} />
               </Link>
-              <Link
-                href="/docs/getting-started/overview"
-                className="btn-ghost"
-                id="hero-learn-more"
-              >
+              <Link href="/docs" className="btn-ghost" id="hero-learn-more">
                 Why mobx-query?
               </Link>
             </div>
@@ -76,7 +71,7 @@ export default function HomePage() {
             <div className="hero-install">
               <div className="hero-install-box">
                 <span className="hero-install-prompt">$</span>
-                <code>npm install mobx-query</code>
+                <code>npm install @mobx-query/core</code>
               </div>
             </div>
 
@@ -85,55 +80,6 @@ export default function HomePage() {
               <EcoBadge label="MobX 6+" />
               <EcoBadge label="React 18 / 19" />
               <EcoBadge label="TypeScript-first" />
-            </div>
-          </div>
-
-          {/* Floating Architecture Diagram */}
-          <div className="hero-visual">
-            <div className="hero-diagram">
-              <div className="diagram-card diagram-card-mqclient">
-                <div className="diagram-card-icon">
-                  <Box size={18} />
-                </div>
-                <span className="diagram-card-label">MQClient</span>
-                <span className="diagram-card-sub">Root container</span>
-              </div>
-
-              <div className="diagram-connector diagram-connector-1" />
-              <div className="diagram-connector diagram-connector-2" />
-
-              <div className="diagram-card diagram-card-em">
-                <div className="diagram-card-icon">
-                  <Database size={18} />
-                </div>
-                <span className="diagram-card-label">EntityManager</span>
-                <span className="diagram-card-sub">
-                  Normalized Map&lt;ID, Entity&gt;
-                </span>
-              </div>
-
-              <div className="diagram-card diagram-card-store">
-                <div className="diagram-card-icon">
-                  <Component size={18} />
-                </div>
-                <span className="diagram-card-label">RootStore</span>
-                <span className="diagram-card-sub">Queries & mutations</span>
-              </div>
-
-              <div className="diagram-connector diagram-connector-3" />
-
-              <div className="diagram-card diagram-card-entity">
-                <div className="diagram-card-icon">
-                  <Layers size={18} />
-                </div>
-                <span className="diagram-card-label">Entity</span>
-                <span className="diagram-card-sub">Observable + hydrate()</span>
-              </div>
-
-              {/* Floating particles */}
-              <div className="diagram-particle diagram-particle-1" />
-              <div className="diagram-particle diagram-particle-2" />
-              <div className="diagram-particle diagram-particle-3" />
             </div>
           </div>
         </div>
@@ -483,7 +429,7 @@ export default function HomePage() {
               stepLabel="Define"
               lines={[
                 {
-                  text: `import { Entity } from "@mobx-query/core";`,
+                  text: `import { Entity, UpdateMutation } from "@mobx-query/core";`,
                   kind: "import",
                 },
                 {
@@ -496,10 +442,6 @@ export default function HomePage() {
                   kind: "keyword",
                 },
                 {
-                  text: `  id: string = crypto.randomUUID();`,
-                  kind: "default",
-                },
-                {
                   text: `  @observable accessor title: string = "";`,
                   kind: "highlight",
                 },
@@ -508,19 +450,34 @@ export default function HomePage() {
                   kind: "highlight",
                 },
                 { text: ``, kind: "blank" },
-                { text: `  hydrate(data: TodoData) {`, kind: "keyword" },
-                { text: `    this.id = data.id;`, kind: "default" },
-                { text: `    this.title = data.title;`, kind: "default" },
                 {
-                  text: `    this.completed = data.completed;`,
-                  kind: "default",
+                  text: `  readonly updateMutation = new UpdateMutation({`,
+                  kind: "highlight",
                 },
-                { text: `  }`, kind: "default" },
+                { text: `    entity: Todo,`, kind: "highlight" },
+                { text: `    instance: this,`, kind: "highlight" },
+                { text: `    mutationFn: async () => {`, kind: "highlight" },
+                {
+                  text: `      await fetch(\`/api/todos/\${this.id}\`, {`,
+                  kind: "highlight",
+                },
+                { text: `        method: "PATCH",`, kind: "highlight" },
+                {
+                  text: `        body: JSON.stringify({ completed: this.completed }),`,
+                  kind: "highlight",
+                },
+                { text: `      });`, kind: "highlight" },
+                { text: `    },`, kind: "highlight" },
+                { text: `  });`, kind: "highlight" },
                 { text: ``, kind: "blank" },
                 { text: `  @action toggleCompleted() {`, kind: "keyword" },
                 {
                   text: `    this.completed = !this.completed;`,
                   kind: "default",
+                },
+                {
+                  text: `    this.updateMutation.mutate();`,
+                  kind: "highlight",
                 },
                 { text: `  }`, kind: "default" },
                 { text: `}`, kind: "default" },
@@ -613,7 +570,7 @@ export default function HomePage() {
             </p>
             <div className="hero-actions align-center justify-center w-full">
               <Link
-                href="/docs/getting-started/quickstart"
+                href="/docs/quickstart"
                 className="btn-primary"
                 id="cta-quickstart"
               >
@@ -621,7 +578,7 @@ export default function HomePage() {
                 <ArrowRight size={16} />
               </Link>
               <Link
-                href="/docs/getting-started/installation"
+                href="/docs/installation"
                 className="btn-ghost"
                 id="cta-install"
               >
